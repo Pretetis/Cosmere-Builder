@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cosmere RPG — Árvore de Habilidades</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Loading Screen -->
+  <div id="loading">
+    <h1>Cosmere RPG</h1>
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- Tooltip -->
+  <div id="tooltip"></div>
+
+  <!-- Skill Detail Modal -->
+  <div id="skill-modal"></div>
+
+  <!-- Main Layout -->
+  <div id="app">
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+
+      <div class="sidebar-header">
+        <h1>Cosmere RPG</h1>
+        <div class="subtitle">Sistema de Árvore de Habilidades</div>
+      </div>
+
+      <!-- Character -->
+      <div class="sidebar-section">
+        <h2>Personagem</h2>
+        <div class="profile-row">
+          <label>Nome</label>
+          <input type="text" id="char-name" placeholder="Nome do personagem">
+        </div>
+        <div class="profile-row">
+          <label>Ancestralidade</label>
+        </div>
+        <div class="race-select">
+          <button class="race-btn active" data-race="human">Humano</button>
+          <button class="race-btn" data-race="singer">Cantor</button>
+        </div>
+      </div>
+
+      <!-- Level -->
+      <div class="sidebar-section">
+        <h2>Nível</h2>
+        <div class="level-row">
+          <div class="level-display" id="level-val">1</div>
+          <div>
+            <div style="font-size:11px; color: var(--text-muted);">Patamar: <span id="tier-val">1</span></div>
+          </div>
+          <div class="level-controls" style="margin-left:auto;">
+            <button class="lvl-btn" id="lvl-down">−</button>
+            <button class="lvl-btn" id="lvl-up">+</button>
+          </div>
+        </div>
+        <div class="points-bar" id="points-bar"></div>
+      </div>
+
+      <!-- Attributes -->
+      <div class="sidebar-section">
+        <h2>Atributos</h2>
+        <div class="attr-grid" id="attr-grid"></div>
+        <div class="defense-row" id="defenses"></div>
+      </div>
+
+      <!-- Perícias -->
+      <div class="sidebar-section">
+        <h2>Perícias</h2>
+        <div class="pericias-grid" id="pericias-grid"></div>
+      </div>
+
+      <!-- Radiant -->
+      <div class="sidebar-section">
+        <h2>Ordem Radiante</h2>
+        <div id="radiant-select"></div>
+        <div id="radiant-pericias"></div>
+      </div>
+
+      <!-- Bottom bar -->
+      <div class="bottom-bar">
+        <div class="save-load-row" style="margin-bottom: 8px;">
+          <button class="btn primary" id="btn-save">Salvar</button>
+          <button class="btn" id="btn-load">Carregar</button>
+          <button class="btn danger" id="btn-reset">Reset</button>
+        </div>
+        <div class="save-load-row">
+          <button class="btn" id="btn-export">Exportar JSON</button>
+          <button class="btn" id="btn-import">Importar JSON</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 3D Viewport -->
+    <div id="viewport">
+      <div class="class-tabs" id="class-tabs"></div>
+    </div>
+
+  </div>
+
+  <!-- Three.js from CDN (r152 for MeshPhysicalMaterial clearcoat) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+  <!-- App Scripts -->
+  <script src="js/data.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
