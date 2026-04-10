@@ -6,12 +6,99 @@
 const App = (() => {
 
   // ---- STATE ----
+  // ---- RADIANT WHEEL DATA ----
+  // Vinculadores at index 0 = top (12h / norte). 10 ordens em círculo completo.
+  const WHEEL_ORDERS = [
+    'Vinculadores',
+    'Corredor dos Ventos', 'Rompe-Céu', 'Pulverizador',
+    'Dançarino dos Precipícios', 'Sentinela da Verdade',
+    'Teceluz', 'Alternauta', 'Plasmador', 'Guardião das Pedras',
+  ];
+
+  // Not-playable orders — shown greyed out, non-selectable
+  const WHEEL_UNPLAYABLE = new Set(['Vinculadores']);
+
+  // Shared surge between WHEEL_ORDERS[i] and WHEEL_ORDERS[(i+1) % 10] — complete circle
+  const WHEEL_SURGES = [
+    { name: 'Adesão',        svg: 'svg/Adhesion_Surge-glyph.svg'       }, // Vinculadores↔Corredor
+    { name: 'Gravitação',    svg: 'svg/Gravitation_Surge-glyph.svg'    }, // Corredor↔Rompe
+    { name: 'Divisão',       svg: 'svg/Division_Surge-glyph.svg'       }, // Rompe↔Pulverizador
+    { name: 'Abrasão',       svg: 'svg/Abrasion_Surge-glyph.svg'       }, // Pulverizador↔Dançarino
+    { name: 'Progressão',    svg: 'svg/Progression_Surge-glyph.svg'    }, // Dançarino↔Sentinela
+    { name: 'Iluminação',    svg: 'svg/Illumination_Surge-glyph.svg'   }, // Sentinela↔Teceluz
+    { name: 'Transformação', svg: 'svg/Transformation_Surge-glyph.svg' }, // Teceluz↔Alternauta
+    { name: 'Transporte',    svg: 'svg/Transportation_Surge-glyph.svg' }, // Alternauta↔Plasmador
+    { name: 'Coesão',        svg: 'svg/Cohesion_Surge-glyph.svg'       }, // Plasmador↔Guardião
+    { name: 'Tensão',        svg: 'svg/Tension_Surge-glyph.svg'        }, // Guardião↔Vinculadores
+  ];
+
+  // SVG glyphs — mirrors renderer.js RADIANT_SVG_MAP
+  const WHEEL_SVG_MAP = {
+    'Corredor dos Ventos':       'svg/Windrunners_glyph.svg',
+    'Rompe-Céu':                 'svg/Skybreakers_glyph.svg',
+    'Pulverizador':              'svg/Dustbringers_glyph.svg',
+    'Dançarino dos Precipícios': 'svg/Edgedancers_glyph.svg',
+    'Sentinela da Verdade':      'svg/Truthwatchers_glyph.svg',
+    'Teceluz':                   'svg/Lightweavers_glyph.svg',
+    'Alternauta':                'svg/elsecallers_glyph.svg',
+    'Plasmador':                 'svg/Willshapers_glyph.svg',
+    'Guardião das Pedras':       'svg/Stonewards_glyph.svg',
+    'Vinculadores':              'svg/Bondsmiths_glyph.svg',
+  };
+
+  // Cache for fetched SVG text (used for inline colored SVGs in the wheel)
+  const _wheelSvgCache = {};
+
+  // Fetch SVG source and cache it
+  async function fetchSvgText(url) {
+    if (_wheelSvgCache[url]) return _wheelSvgCache[url];
+    try {
+      const r = await fetch(url);
+      const text = await r.text();
+      _wheelSvgCache[url] = text;
+      return text;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Return a data URI for a black SVG recolored to `color`
+  function coloredSvgSrc(svgText, color) {
+    if (!svgText) return '';
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const root = doc.querySelector('svg');
+    if (!root) return '';
+    // Set fill on root; also replace explicit black fills on children
+    root.setAttribute('fill', color);
+    root.querySelectorAll('[fill]').forEach(el => {
+      const f = el.getAttribute('fill').toLowerCase();
+      if (f === '#000' || f === 'black' || f === '#000000') el.setAttribute('fill', color);
+    });
+    root.querySelectorAll('[stroke]').forEach(el => {
+      const s = el.getAttribute('stroke').toLowerCase();
+      if (s === '#000' || s === 'black' || s === '#000000') el.setAttribute('stroke', color);
+    });
+    const serial = new XMLSerializer().serializeToString(root);
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serial);
+  }
+
+  // Pre-fetch all wheel SVGs (called on init so wheel opens instantly)
+  async function preloadWheelSvgs() {
+    const allSvgs = [
+      ...Object.values(WHEEL_SVG_MAP),
+      ...WHEEL_SURGES.map(s => s.svg),
+    ];
+    await Promise.all([...new Set(allSvgs)].map(fetchSvgText));
+  }
+
   const state = {
     profile: {
       name: '',
       race: 'human',
       level: 1,
       radiantClass: null,
+      radiantClassLocked: false,
     },
     attributes: {
       forca: 0, velocidade: 0, intelecto: 0,
@@ -371,6 +458,192 @@ const App = (() => {
     });
   }
 
+  // ---- VIEWPORT GLYPH WATERMARK ----
+  function updateViewportGlyph() {
+    const el = document.getElementById('viewport-center-glyph');
+    if (!el) return;
+    const cls = state.profile.radiantClass;
+    if (!cls) {
+      el.innerHTML = '';
+      el.classList.remove('visible');
+      return;
+    }
+    const svg = WHEEL_SVG_MAP[cls];
+    // Only update img if class changed
+    const existing = el.querySelector('img');
+    if (!existing || existing.dataset.cls !== cls) {
+      el.innerHTML = `<img src="${svg}" alt="${cls}" data-cls="${cls}" draggable="false">`;
+    }
+    el.classList.add('visible');
+  }
+
+  // ---- RADIANT WHEEL ----
+  async function buildRadiantWheel() {
+    const svgEl = document.getElementById('radiant-wheel-svg');
+    const ringEl = document.getElementById('radiant-wheel-ring');
+    const centerEl = document.getElementById('rw-center');
+    if (!svgEl || !ringEl) return;
+
+    svgEl.innerHTML = '';
+    ringEl.innerHTML = '';
+
+    // Pre-fetch all SVGs so coloredSvgSrc works synchronously below
+    const allUrls = [...new Set([
+      ...Object.values(WHEEL_SVG_MAP),
+      ...WHEEL_SURGES.map(s => s.svg),
+      'svg/Cosmere_symbol.svg',
+    ])];
+    await Promise.all(allUrls.map(fetchSvgText));
+
+    const CX = 280, CY = 280;
+    const R_ORDER = 210;
+    const R_SURGE = 135;
+    const N = WHEEL_ORDERS.length; // 10
+
+    const selected = state.profile.radiantClass;
+    const ns = 'http://www.w3.org/2000/svg';
+
+    // ---- SVG connector lines + surge nodes ----
+    for (let i = 0; i < N; i++) {
+      const a0 = -Math.PI / 2 + (2 * Math.PI * i / N);
+      const a1 = -Math.PI / 2 + (2 * Math.PI * ((i + 1) % N) / N);
+      const x0 = CX + R_ORDER * Math.cos(a0);
+      const y0 = CY + R_ORDER * Math.sin(a0);
+      const x1 = CX + R_ORDER * Math.cos(a1);
+      const y1 = CY + R_ORDER * Math.sin(a1);
+      const surgeAngle = a0 + Math.PI / N;
+      const sx = CX + R_SURGE * Math.cos(surgeAngle);
+      const sy = CY + R_SURGE * Math.sin(surgeAngle);
+
+      // A surge is "active" if the selected order is one of its two adjacent orders
+      const surgeActive = selected &&
+        (WHEEL_ORDERS[i] === selected || WHEEL_ORDERS[(i + 1) % N] === selected);
+
+      // Color for active state: use the selected order's color
+      const activeColor = selected ? (CLASS_COLORS[selected] || '#d4a853') : '#d4a853';
+
+      // Order ring arc segment
+      const seg = document.createElementNS(ns, 'line');
+      seg.setAttribute('x1', x0); seg.setAttribute('y1', y0);
+      seg.setAttribute('x2', x1); seg.setAttribute('y2', y1);
+      seg.setAttribute('stroke', surgeActive ? activeColor : 'rgba(255,255,255,0.12)');
+      seg.setAttribute('stroke-width', surgeActive ? '2' : '1');
+      seg.setAttribute('opacity', surgeActive ? '0.7' : '1');
+      svgEl.appendChild(seg);
+
+      // Spoke lines: each order → its surge
+      for (const { ox, oy } of [{ ox: x0, oy: y0 }, { ox: x1, oy: y1 }]) {
+        const spoke = document.createElementNS(ns, 'line');
+        spoke.setAttribute('x1', ox); spoke.setAttribute('y1', oy);
+        spoke.setAttribute('x2', sx); spoke.setAttribute('y2', sy);
+        spoke.setAttribute('stroke', surgeActive ? activeColor : 'rgba(255,255,255,0.06)');
+        spoke.setAttribute('stroke-width', '1');
+        spoke.setAttribute('opacity', surgeActive ? '0.5' : '1');
+        svgEl.appendChild(spoke);
+      }
+
+      // Surge node (HTML)
+      const surge = WHEEL_SURGES[i];
+      const sNode = document.createElement('div');
+      // Always render dimly; if active, use the selected order color for the icon
+      const surgeIconColor = surgeActive ? activeColor : '#b0aac0';
+      const surgeSrc = coloredSvgSrc(_wheelSvgCache[surge.svg] || null, surgeIconColor) || surge.svg;
+      sNode.className = 'rw-surge' + (surgeActive ? ' active' : '');
+      sNode.style.left = sx + 'px';
+      sNode.style.top = sy + 'px';
+      sNode.innerHTML = `
+        <img src="${surgeSrc}" alt="${surge.name}">
+        <div class="rw-surge-label" style="${surgeActive ? `color:${activeColor};opacity:1` : ''}">${surge.name}</div>
+      `;
+      ringEl.appendChild(sNode);
+    }
+
+    // ---- Order nodes (HTML) ----
+    for (let i = 0; i < N; i++) {
+      const angle = -Math.PI / 2 + (2 * Math.PI * i / N);
+      const ox = CX + R_ORDER * Math.cos(angle);
+      const oy = CY + R_ORDER * Math.sin(angle);
+      const cls = WHEEL_ORDERS[i];
+      const color = CLASS_COLORS[cls] || '#ccc';
+      const unplayable = WHEEL_UNPLAYABLE.has(cls);
+
+      const node = document.createElement('div');
+      node.className = 'rw-order';
+      if (unplayable) node.classList.add('unplayable');
+      else if (selected === cls) node.classList.add('selected');
+      else if (selected) node.classList.add('dimmed');
+      node.style.left = ox + 'px';
+      node.style.top = oy + 'px';
+      node.style.color = color;
+      node.dataset.cls = cls;
+
+      const glyphSvgText = _wheelSvgCache[WHEEL_SVG_MAP[cls]] || null;
+      const glyphSrc = coloredSvgSrc(glyphSvgText, color) || WHEEL_SVG_MAP[cls];
+
+      node.innerHTML = `
+        <div class="rw-order-glyph-wrap" style="background:${color}18;">
+          <img src="${glyphSrc}" alt="${cls}">
+        </div>
+        <div class="rw-order-label">${cls}${unplayable ? '<br><span class="rw-not-playable">Não Jogável</span>' : ''}</div>
+      `;
+
+      if (!unplayable) {
+        node.addEventListener('click', () => selectRadiantOrder(cls));
+      }
+      ringEl.appendChild(node);
+    }
+
+    // ---- Center symbol ----
+    if (selected) {
+      const color = CLASS_COLORS[selected] || '#fff';
+      const glyphText = _wheelSvgCache[WHEEL_SVG_MAP[selected]] || null;
+      const glyphSrc = coloredSvgSrc(glyphText, color) || WHEEL_SVG_MAP[selected];
+      centerEl.classList.add('chosen');
+      centerEl.innerHTML = `<img src="${glyphSrc}" alt="${selected}" style="filter:drop-shadow(0 0 14px ${color})">`;
+    } else {
+      const cosmereText = _wheelSvgCache['svg/Cosmere_symbol.svg'] || null;
+      const cosmereSrc = coloredSvgSrc(cosmereText, '#d4a853') || 'svg/Cosmere_symbol.svg';
+      centerEl.classList.remove('chosen');
+      centerEl.innerHTML = `<img src="${cosmereSrc}" alt="Cosmere">`;
+    }
+  }
+
+  async function showRadiantWheel() {
+    if (state.profile.radiantClassLocked) {
+      notify('Ordem Selada. Use Reset para alterar.');
+      return;
+    }
+    if (state.profile.level < 2) {
+      notify('Disponível a partir do Nível 2');
+      return;
+    }
+    document.getElementById('radiant-wheel').classList.add('visible');
+    // Scale container to fill ~85% of the smaller viewport dimension
+    const container = document.getElementById('radiant-wheel-container');
+    if (container) {
+      const available = Math.min(window.innerWidth, window.innerHeight) * 0.85;
+      const scale = Math.min(available / 560, 1.6); // max 1.6×
+      container.style.transform = `scale(${scale})`;
+    }
+    await buildRadiantWheel();
+  }
+
+  function hideRadiantWheel() {
+    document.getElementById('radiant-wheel').classList.remove('visible');
+  }
+
+  async function selectRadiantOrder(cls) {
+    state.profile.radiantClass = cls;
+    await buildRadiantWheel(); // re-render with highlight
+
+    setTimeout(() => {
+      hideRadiantWheel();
+      renderRadiantSection();
+      renderClassTabs();
+      rebuildTree();
+    }, 420);
+  }
+
   function renderRadiantSection() {
     const container = document.getElementById('radiant-select');
     if (!container) return;
@@ -380,34 +653,61 @@ const App = (() => {
     if (!unlocked) {
       container.innerHTML = '<div class="radiant-placeholder">Disponivel a partir do Nível 2</div>';
       renderRadiantPericias();
+      updateViewportGlyph();
       return;
     }
 
-    for (const cls of CosData.RADIANT_CLASSES) {
+    const cls = state.profile.radiantClass;
+    const locked = state.profile.radiantClassLocked;
+
+    if (!cls) {
+      // No order chosen yet — show wheel open button
       const btn = document.createElement('button');
-      const isActive = state.profile.radiantClass === cls;
-      const color = clsColor(cls);
-      btn.className = 'radiant-btn' + (isActive ? ' active' : '');
-      btn.textContent = cls;
-      if (isActive) {
-        btn.style.borderColor = color;
-        btn.style.color = color;
-        btn.style.background = color + '1a';
-        btn.style.boxShadow = `0 0 10px ${color}26`;
-      }
-      btn.addEventListener('click', () => {
-        state.profile.radiantClass = isActive ? null : cls;
-        if (!state.profile.radiantClass && CosData.RADIANT_CLASSES.includes(state.activeClass)) {
-          state.activeClass = '_all';
-        }
-        renderRadiantSection();
-        renderClassTabs();
-        rebuildTree(); // always full rebuild so radiant tree appears/disappears
-      });
+      btn.className = 'radiant-choose-btn';
+      btn.textContent = '✦  Escolher Ordem Radiante';
+      btn.addEventListener('click', showRadiantWheel);
       container.appendChild(btn);
+    } else if (!locked) {
+      // Chosen but not sealed — show display + alter + seal buttons
+      const color = clsColor(cls);
+      const div = document.createElement('div');
+      div.className = 'radiant-locked-display';
+      div.style.borderColor = color + '60';
+      div.innerHTML = `
+        <img class="radiant-locked-glyph" src="${WHEEL_SVG_MAP[cls]}" alt="${cls}">
+        <div class="radiant-locked-info">
+          <div class="radiant-locked-name" style="color:${color}">${cls}</div>
+          <div style="display:flex;gap:6px;margin-top:5px;">
+            <button class="btn" style="font-size:10px;padding:3px 8px;flex:none;" id="radiant-alter-btn">Alterar</button>
+            <button class="btn primary" style="font-size:10px;padding:3px 8px;flex:none;" id="radiant-seal-btn">Selar Ordem</button>
+          </div>
+        </div>
+      `;
+      container.appendChild(div);
+      div.querySelector('#radiant-alter-btn').addEventListener('click', showRadiantWheel);
+      div.querySelector('#radiant-seal-btn').addEventListener('click', () => {
+        state.profile.radiantClassLocked = true;
+        renderRadiantSection();
+        notify('Ordem selada! Apenas um Reset pode desfazer.');
+      });
+    } else {
+      // Sealed — show lock badge, no change allowed
+      const color = clsColor(cls);
+      const div = document.createElement('div');
+      div.className = 'radiant-locked-display';
+      div.style.borderColor = color + '60';
+      div.innerHTML = `
+        <img class="radiant-locked-glyph" src="${WHEEL_SVG_MAP[cls]}" alt="${cls}">
+        <div class="radiant-locked-info">
+          <div class="radiant-locked-name" style="color:${color}">${cls}</div>
+          <div class="radiant-sealed-badge">🔒 Ordem Selada</div>
+        </div>
+      `;
+      container.appendChild(div);
     }
 
     renderRadiantPericias();
+    updateViewportGlyph();
   }
 
   function renderRadiantPericias() {
@@ -589,6 +889,8 @@ const App = (() => {
     allBtn.textContent = 'Todas';
     allBtn.style.borderBottomColor = state.activeClass === '_all' ? 'var(--accent-gold)' : 'transparent';
     allBtn.addEventListener('click', () => {
+      if (state.activeClass === '_all') return;
+      triggerTabFlash();
       state.activeClass = '_all';
       renderClassTabs();
       rebuildTree();
@@ -606,6 +908,8 @@ const App = (() => {
       btn.textContent = cls;
       btn.style.borderBottomColor = cls === state.activeClass ? `var(--color-${cls})` : 'transparent';
       btn.addEventListener('click', () => {
+        if (state.activeClass === cls) return;
+        triggerTabFlash();
         state.activeClass = cls;
         renderClassTabs();
         rebuildTree();
@@ -627,6 +931,8 @@ const App = (() => {
       rbtn.style.borderBottomColor = rcls === state.activeClass ? rColor : 'transparent';
       rbtn.style.color = rcls === state.activeClass ? rColor : '';
       rbtn.addEventListener('click', () => {
+        if (state.activeClass === rcls) return;
+        triggerTabFlash();
         state.activeClass = rcls;
         renderClassTabs();
         rebuildTree();
@@ -713,6 +1019,14 @@ const App = (() => {
     if (tt) tt.classList.remove('visible');
   }
 
+  // ---- TAB FLASH ----
+  function triggerTabFlash() {
+    const flash = document.getElementById('viewport-flash');
+    if (!flash) return;
+    flash.classList.add('active');
+    setTimeout(() => flash.classList.remove('active'), 80);
+  }
+
   // ---- NOTIFICATIONS ----
   function notify(msg) {
     let el = document.querySelector('.notification');
@@ -743,6 +1057,7 @@ const App = (() => {
     'Alternauta':                '#e2e8f0',
     'Plasmador':                 '#c084fc',
     'Guardião das Pedras':       '#a87d4e',
+    'Vinculadores':              '#d4a853',
   };
 
   function clsColor(cls) {
@@ -844,7 +1159,7 @@ const App = (() => {
     if (!raw) { notify('Nenhum perfil salvo encontrado'); return; }
     try {
       const data = JSON.parse(raw);
-      state.profile = { ...state.profile, ...data.profile };
+      state.profile = { ...state.profile, radiantClassLocked: false, ...data.profile };
       state.attributes = { ...state.attributes, ...data.attributes };
       state.pericias = { ...state.pericias, ...data.pericias };
       state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
@@ -867,7 +1182,7 @@ const App = (() => {
   }
 
   function resetProfile() {
-    state.profile = { name: '', race: 'human', level: 1, radiantClass: null };
+    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false };
     state.attributes = { forca:0, velocidade:0, intelecto:0, vontade:0, consciencia:0, presenca:0 };
     initPericias();
     state.unlockedSkills = new Set();
@@ -916,7 +1231,7 @@ const App = (() => {
       reader.onload = ev => {
         try {
           const data = JSON.parse(ev.target.result);
-          state.profile = { ...state.profile, ...data.profile };
+          state.profile = { ...state.profile, radiantClassLocked: false, ...data.profile };
           state.attributes = { ...state.attributes, ...data.attributes };
           state.pericias = { ...state.pericias, ...data.pericias };
           state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
@@ -946,6 +1261,7 @@ const App = (() => {
   async function init() {
     await CosData.loadSkills();
     await CosData.loadRadiantSkills();
+    preloadWheelSvgs(); // fire-and-forget — wheel opens instantly later
 
     initPericias();
 
@@ -1026,6 +1342,17 @@ const App = (() => {
     document.getElementById('btn-reset')?.addEventListener('click', resetProfile);
     document.getElementById('btn-export')?.addEventListener('click', exportProfile);
     document.getElementById('btn-import')?.addEventListener('click', importProfile);
+
+    // Radiant wheel close button + backdrop (Escape key)
+    document.getElementById('radiant-wheel-close')?.addEventListener('click', hideRadiantWheel);
+    document.getElementById('radiant-wheel')?.addEventListener('click', e => {
+      if (e.target === document.getElementById('radiant-wheel')) hideRadiantWheel();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.getElementById('radiant-wheel')?.classList.contains('visible')) {
+        hideRadiantWheel();
+      }
+    });
   }
 
   // ---- PDF SHEET EXPORT ----
@@ -1081,7 +1408,28 @@ const App = (() => {
       forBothPages('Character Name', p.name || '');
       forBothPages('Level', String(p.level));
       forBothPages('Ancestry', p.race === 'human' ? 'Humano' : 'Cantor');
-      forBothPages('Paths', p.radiantClass || '');
+      // forBothPages('Paths', p.radiantClass || '');
+
+      const allExportSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
+      
+      // 1. Descobre todos os talentos que o jogador comprou
+      const unlockedData = [...state.unlockedSkills]
+        .map(id => allExportSkills.find(sk => sk.id === id))
+        .filter(Boolean);
+      
+      // 2. Extrai apenas o nome das classes base (Agente, Caçador, etc.) ignorando repetições e radiantes
+      const baseClasses = [...new Set(unlockedData.map(s => s.cls))]
+        .filter(c => CosData.CLASSES.includes(c));
+      
+      // 3. Junta as classes base com ";"
+      let pathsStr = baseClasses.join('; ');
+      
+      // 4. Adiciona a Ordem Radiante no final (se ele tiver uma)
+      if (p.radiantClass) {
+        pathsStr += (pathsStr ? '; ' : '') + p.radiantClass;
+      }
+      
+      forBothPages('Paths', pathsStr);
 
       // Atributos (duplicados em ambas as páginas)
       forBothPages('Strength',  a.forca       > 0 ? String(a.forca)       : '');
@@ -1117,10 +1465,27 @@ const App = (() => {
         persuasao:       'Persuasion',
         sobrevivencia:   'Survival',
       };
+      // for (const [key, fieldName] of Object.entries(SKILL_SCORE_FIELDS)) {
+      //   const val = state.pericias[key] || 0;
+      //   setField(fieldName, val > 0 ? String(val) : '');
+      // }
       for (const [key, fieldName] of Object.entries(SKILL_SCORE_FIELDS)) {
-        const val = state.pericias[key] || 0;
-        setField(fieldName, val > 0 ? String(val) : '');
+        // Pega o valor alocado (rank) na perícia
+        const rank = state.pericias[key] || 0;
+        
+        // Pega o nome do atributo correspondente a esta perícia no CosData
+        const attrKey = CosData.PERICIAS[key] ? CosData.PERICIAS[key].attr : null;
+        
+        // Pega o valor que o jogador tem no atributo (ex: Força, Velocidade...)
+        const attrBonus = attrKey ? (state.attributes[attrKey] || 0) : 0;
+        
+        // O valor final na ficha é a soma
+        const totalBonus = rank + attrBonus;
+
+        // Preenche o campo da ficha (apenas se for maior que zero para manter limpo)
+        setField(fieldName, totalBonus > 0 ? String(totalBonus) : '');
       }
+
 
       // Perícias – círculos de rank (checkboxes), ordenados esq→dir (rank 1 = 1º)
       const SKILL_RANK_BOXES = {
@@ -1153,6 +1518,52 @@ const App = (() => {
         }
       }
 
+      if (p.radiantClass) {
+        const activeSurges = CosData.RADIANT_CLASS_PERICIAS[p.radiantClass] || [];
+        
+        // Slots em ordem (Esquerda, Centro, Direita) mapeando os campos exatos
+        const slots = [
+          { abbrField: 'Physical Custom',  nameField: 'Custom Skill 1', scoreField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
+          { abbrField: 'Cognitive Custom', nameField: 'Custom Skill 2', scoreField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
+          { abbrField: 'Spiritual Custom', nameField: 'Custom Skill 3', scoreField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
+        ];
+
+        let currentSlotIndex = 0; // Vai preenchendo da esquerda pra direita
+
+        activeSurges.forEach(surgeKey => {
+          const info = CosData.PERICIAS_RADIANTES[surgeKey];
+          // Se não achar o surto ou acabarem os slots (máx 3), pula
+          if (!info || currentSlotIndex >= slots.length) return;
+
+          const rank = state.radiantPericias[surgeKey] || 0;
+          const attrVal = a[info.attr] || 0; 
+          const totalBonus = rank + attrVal;
+
+          // Pega a abreviação do atributo correspondente (ex: 'FOR', 'VEL', 'PRE')
+          const attrInfo = CosData.ATTRIBUTES[info.attr];
+          const attrAbbr = attrInfo ? attrInfo.abbr : '';
+
+          const targetSlot = slots[currentSlotIndex];
+
+          // 1. Preenche a caixinha menor com a abreviação do Atributo
+          setField(targetSlot.abbrField, attrAbbr);
+          
+          // 2. Preenche o Nome da Perícia (Surto)
+          setField(targetSlot.nameField, info.name);
+          
+          // 3. Preenche o Bônus Total (Atributo + Rank)
+          setField(targetSlot.scoreField, totalBonus > 0 ? String(totalBonus) : '');
+          
+          // 4. Preenche os checkboxes (bolinhas)
+          for (let i = 0; i < targetSlot.boxes.length; i++) {
+            setCheck(`Rank Box ${targetSlot.boxes[i]}`, i < rank);
+          }
+
+          // Avança para a próxima coluna da ficha
+          currentSlotIndex++;
+        });
+      }
+
       // Talentos desbloqueados
       const allSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
       const talentNames = [...state.unlockedSkills]
@@ -1164,6 +1575,69 @@ const App = (() => {
       setField('Talents 1', uniqueTalents.slice(0, chunk).join('\n'));
       setField('Talents 2', uniqueTalents.slice(chunk, chunk * 2).join('\n'));
       setField('Talents 3', uniqueTalents.slice(chunk * 2).join('\n'));
+
+      // =========================================================
+      // ESTATÍSTICAS DERIVADAS (Saúde, Foco, Movimento, etc.)
+      // =========================================================
+      
+      // Tabela de Referência Baseada nos Atributos (Padrão do Sistema)
+      const ATTR_TABLE = {
+        0: { recDie: '1d4',  senses: '1,5m (1q)', mov: '6m (4q)',   lift: '50kg' },
+        1: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
+        2: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
+        3: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
+        4: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
+        5: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
+        6: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
+        7: { recDie: '1d12', senses: '30m (20q)', mov: '18m (12q)', lift: '2500kg' },
+        8: { recDie: '1d12', senses: '30m (20q)', mov: '18m (16q)', lift: '2500kg' },
+        9: { recDie: '1d20', senses: '30m (20q)', mov: '24m (16q)', lift: '5000kg' }
+      };
+
+      // Garante que o valor do atributo não quebre a tabela (limite de 0 a 9)
+      const safeAttr = (val) => Math.min(Math.max(val || 0, 0), 9);
+
+      // --- CÁLCULO DA VIDA MÁXIMA ---
+      // A vida máxima não é um valor estático, ela escala por nível.
+      // Este loop percorre a tabela de níveis (LEVEL_TABLE do seu data.js) 
+      // e soma a vida exata que o jogador tem direito.
+      let maxHealth = 0;
+      for (let i = 0; i < CosData.LEVEL_TABLE.length; i++) {
+        const row = CosData.LEVEL_TABLE[i];
+        if (row.level > p.level) break; // Para de somar ao atingir o nível atual
+        
+        // Verifica se a string no data.js contém a Força (ex: '10+FOR', '4+FOR')
+        if (typeof row.hpGain === 'string' && row.hpGain.includes('+FOR')) {
+          maxHealth += parseInt(row.hpGain.split('+')[0]) + a.forca;
+        } else {
+          maxHealth += Number(row.hpGain) || 0;
+        }
+      }
+
+      // --- FOCO E INVESTIDURA ---
+      const maxFocus = 2 + a.vontade;
+      const maxInvestiture = p.radiantClass ? 2 + a.consciencia : 0;
+
+      // --- CONSULTA NA TABELA ---
+      const recDie = ATTR_TABLE[safeAttr(a.vontade)].recDie;
+      const senses = ATTR_TABLE[safeAttr(a.consciencia)].senses;
+      const movement = ATTR_TABLE[safeAttr(a.velocidade)].mov;
+      const lifting = ATTR_TABLE[safeAttr(a.forca)].lift;
+
+      // --- PREENCHER OS CAMPOS DA FICHA ---
+      setField('Health Maximum', String(maxHealth));      
+      setField('Focus Maximum', String(maxFocus));
+      if (maxInvestiture > 0) {
+        setField('Investiture Maximum 4', String(maxInvestiture));
+      }
+      if (maxInvestiture === 0) {
+        setField('Investiture Maximum 4', '0');
+      }
+      
+      setField('Recovery Die', recDie);
+      setField('Senses Range', senses);
+      setField('Movement', movement);
+      setField('Lifting Capacity', lifting);
 
       // Download
       console.log('[Sheet] Salvando PDF...');

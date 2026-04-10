@@ -890,3 +890,347 @@ html, body {
   font-style: italic;
   padding: 8px;
 }
+
+/* ============================================================
+   RADIANT WHEEL OVERLAY
+   ============================================================ */
+
+#radiant-wheel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(8px);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  animation: rw-fade-in 0.3s ease both;
+}
+#radiant-wheel.visible { display: flex; }
+
+@keyframes rw-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.radiant-wheel-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 26px;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+  z-index: 1;
+}
+.radiant-wheel-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.radiant-wheel-title {
+  font-family: 'Cinzel', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-gold);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.radiant-wheel-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  margin-top: -6px;
+}
+
+/* Outer wrapper — controls the visible size */
+.radiant-wheel-outer {
+  /* no explicit width/height here — the inner container sets it via scale */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Wheel container — always 560×560 internally, scaled via JS to fit screen */
+.radiant-wheel-container {
+  position: relative;
+  width: 560px;
+  height: 560px;
+  flex-shrink: 0;
+  transform-origin: center center;
+}
+
+.radiant-wheel-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* HTML nodes layer (order glyphs + surge icons) */
+#radiant-wheel-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* individual nodes override this */
+}
+
+/* Center symbol */
+.rw-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+  transition: all 0.4s ease;
+}
+.rw-center img {
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+  filter: saturate(0) brightness(3);
+  transition: all 0.4s ease;
+}
+.rw-center.chosen img {
+  opacity: 0.9;
+  filter: none;
+}
+
+/* ---- ORDER NODES (HTML positioned over SVG) ---- */
+.rw-order {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  z-index: 2;
+  pointer-events: auto;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+.rw-order:hover { transform: translate(-50%, -50%) scale(1.12); }
+.rw-order.selected { transform: translate(-50%, -50%) scale(1.18); }
+.rw-order.dimmed { opacity: 0.25; filter: saturate(0.2); }
+
+.rw-order-glyph-wrap {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.rw-order:hover .rw-order-glyph-wrap {
+  border-color: currentColor;
+  box-shadow: 0 0 16px currentColor;
+}
+.rw-order.selected .rw-order-glyph-wrap {
+  border-color: currentColor;
+  box-shadow: 0 0 24px currentColor, 0 0 6px currentColor inset;
+}
+
+.rw-order-glyph-wrap img {
+  width: 48px;
+  height: 48px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+.rw-order:hover .rw-order-glyph-wrap img,
+.rw-order.selected .rw-order-glyph-wrap img { opacity: 1; }
+
+.rw-order-label {
+  font-family: 'Cinzel', serif;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+  letter-spacing: 0.3px;
+  max-width: 80px;
+  transition: color 0.2s;
+  white-space: nowrap;
+  overflow: visible;
+}
+.rw-order:hover .rw-order-label { color: var(--text-primary); }
+.rw-order.selected .rw-order-label { color: var(--text-primary); }
+
+/* Unplayable order (Vinculadores) */
+.rw-order.unplayable {
+  cursor: default;
+  opacity: 0.35;
+  filter: saturate(0.3);
+}
+.rw-order.unplayable:hover { transform: translate(-50%, -50%); }
+.rw-order.unplayable:hover .rw-order-glyph-wrap {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.rw-not-playable {
+  font-size: 7px;
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* ---- SURGE NODES ---- */
+.rw-surge {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.65;  /* default: visible but subdued */
+  transition: opacity 0.25s;
+}
+.rw-surge.active {
+  opacity: 1;
+}
+
+.rw-surge img {
+  width: 32px;
+  height: 32px;
+  /* src is pre-colored via JS — no CSS filter needed */
+}
+
+.rw-surge-label {
+  font-size: 7px;
+  color: var(--text-muted);
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.2px;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.25s;
+}
+/* active label color is set inline by JS */
+
+/* ============================================================
+   RADIANT LOCKED DISPLAY (sidebar)
+   ============================================================ */
+
+.radiant-choose-btn {
+  width: 100%;
+  padding: 12px;
+  background: rgba(192,132,252,0.06);
+  border: 1px dashed rgba(192,132,252,0.35);
+  border-radius: 8px;
+  color: var(--accent-radiant);
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-align: center;
+  transition: all 0.25s;
+}
+.radiant-choose-btn:hover {
+  background: rgba(192,132,252,0.14);
+  border-color: var(--accent-radiant);
+  box-shadow: 0 0 14px rgba(192,132,252,0.15);
+}
+
+.radiant-locked-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.radiant-locked-glyph {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+.radiant-locked-info {
+  flex: 1;
+  min-width: 0;
+}
+.radiant-locked-name {
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.radiant-sealed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(212,168,83,0.12);
+  border: 1px solid rgba(212,168,83,0.35);
+  color: var(--accent-gold);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   VIEWPORT CENTER GLYPH (watermark)
+   ============================================================ */
+
+#viewport-center-glyph {
+  position: absolute;
+  top: 42px;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+#viewport-center-glyph img {
+  width: 260px;
+  height: 260px;
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+#viewport-center-glyph.visible img { opacity: 0.07; }
+
+/* ============================================================
+   CLASS TAB FLASH
+   ============================================================ */
+
+#viewport-flash {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.08s ease-out;
+}
+#viewport-flash.active { opacity: 0.5; }
+
