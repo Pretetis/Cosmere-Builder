@@ -87,8 +87,17 @@ html, body {
 
 /* ---- SIDEBAR SECTIONS ---- */
 .sidebar-header {
-  padding: 20px 20px 12px;
+  padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-header-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .sidebar-header h1 {
@@ -105,6 +114,34 @@ html, body {
   color: var(--text-muted);
   letter-spacing: 0.5px;
   margin-top: 2px;
+}
+
+/* ---- STATS GRID ---- */
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.stat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.stat-val {
+  color: #fff;
+  font-size: 13px;
 }
 
 .sidebar-section {
@@ -1220,17 +1257,113 @@ html, body {
 #viewport-center-glyph.visible img { opacity: 0.07; }
 
 /* ============================================================
-   CLASS TAB FLASH
+   CLASS TAB SLIDE TRANSITION
    ============================================================ */
 
 #viewport-flash {
   position: absolute;
   inset: 0;
-  background: #000;
-  z-index: 3;
+  background: var(--bg-primary, #0d0d14);
+  z-index: 10;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.08s ease-out;
+  transform: translateX(100%);
 }
-#viewport-flash.active { opacity: 0.5; }
 
+.sphere-track {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.sphere-btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: inset 0 0 4px rgba(0,0,0,0.5);
+}
+
+.sphere-btn:hover {
+    border-color: var(--accent-gold);
+}
+
+.sphere-btn.active {
+    background: #fff;
+    border-color: #fff;
+    box-shadow: 0 0 8px #fff, 0 0 12px var(--accent-gold);
+}
+
+.sphere-btn.locked {
+    cursor: not-allowed;
+    opacity: 0.3;
+}
+
+/* --- OVERRIDES PARA SIDEBAR MAIOR E TOGGLE --- */
+
+#sidebar {
+    width: 380px; /* Aumentado de onde devia estar (~320px) para acomodar melhor a grade */
+    min-width: 380px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+}
+
+#sidebar.closed {
+    transform: translateX(-100%);
+    position: absolute; /* Impede que crie buraco no layout quando fechado */
+}
+
+#viewport {
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#viewport.expanded {
+    margin-left: 0 !important;
+    width: 100vw !important;
+}
+
+.sidebar-toggle-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.sidebar-toggle-btn:hover {
+    border-color: var(--accent-gold);
+    color: var(--accent-gold);
+    background: rgba(212, 168, 83, 0.08);
+}
+
+/* Botão flutuante quando sidebar está fechado */
+#sidebar-reopen {
+    display: none;
+    position: fixed;
+    top: 15px;
+    left: 15px;
+    z-index: 200;
+    background: rgba(10, 11, 16, 0.9);
+    border: 1px solid var(--accent-gold);
+    color: var(--accent-gold);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    line-height: 0;
+}
+#sidebar-reopen:hover {
+    background: rgba(212, 168, 83, 0.15);
+}
+body.sidebar-closed #sidebar-reopen {
+    display: block;
+}

@@ -104,6 +104,7 @@ const App = (() => {
       forca: 0, velocidade: 0, intelecto: 0,
       vontade: 0, consciencia: 0, presenca: 0
     },
+    attrHistory: {},
     pericias: {},
     radiantPericias: {},
     unlockedSkills: new Set(),
@@ -168,6 +169,73 @@ const App = (() => {
       cognitive: 10 + a.intelecto + a.vontade,
       spiritual: 10 + a.consciencia + a.presenca
     };
+  }
+
+  // ---- ESTATÍSTICAS DERIVADAS ----
+  function getDerivedStats() {
+    const a = state.attributes;
+    const p = state.profile;
+
+    const ATTR_TABLE = {
+      0: { recDie: '1d4',  senses: '1,5m (1q)', mov: '6m (4q)',   lift: '50kg' },
+      1: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
+      2: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
+      3: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
+      4: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
+      5: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
+      6: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
+      7: { recDie: '1d12', senses: '30m (20q)', mov: '18m (12q)', lift: '2500kg' },
+      8: { recDie: '1d12', senses: '30m (20q)', mov: '18m (16q)', lift: '2500kg' },
+      9: { recDie: '1d20', senses: '30m (20q)', mov: '24m (16q)', lift: '5000kg' }
+    };
+
+    const safeAttr = (val) => Math.min(Math.max(val || 0, 0), 9);
+
+    let maxHealth = 0;
+    for (let i = 0; i < CosData.LEVEL_TABLE.length; i++) {
+      const row = CosData.LEVEL_TABLE[i];
+      const lvl = row.level;
+      if (lvl > p.level) break;
+      
+      // Usa a força antiga para níveis passados, e a força atual para o nível ativo
+      let forcaAtThisLevel = a.forca;
+      if (lvl < p.level && state.attrHistory[lvl]) {
+         forcaAtThisLevel = state.attrHistory[lvl].forca;
+      }
+
+      if (typeof row.hpGain === 'string' && row.hpGain.includes('+FOR')) {
+        maxHealth += parseInt(row.hpGain.split('+')[0]) + forcaAtThisLevel;
+      } else {
+        maxHealth += Number(row.hpGain) || 0;
+      }
+    }
+
+    const maxFocus = 2 + a.vontade;
+    const maxInvestiture = p.radiantClass ? 2 + a.consciencia : 0;
+
+    return {
+      maxHealth, maxFocus, maxInvestiture,
+      recDie: ATTR_TABLE[safeAttr(a.vontade)].recDie,
+      senses: ATTR_TABLE[safeAttr(a.consciencia)].senses,
+      movement: ATTR_TABLE[safeAttr(a.velocidade)].mov,
+      lifting: ATTR_TABLE[safeAttr(a.forca)].lift
+    };
+  }
+
+  function renderStats() {
+    const container = document.getElementById('stats-grid');
+    if (!container) return;
+    const stats = getDerivedStats();
+
+    container.innerHTML = `
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#e05252;"></span>Vida</span> <strong class="stat-val">${stats.maxHealth}</strong></div>
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#5b9bd5;"></span>Foco</span> <strong class="stat-val">${stats.maxFocus}</strong></div>
+      ${stats.maxInvestiture > 0 ? `<div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:var(--color-Plasmador);"></span>Investidura</span> <strong class="stat-val" style="color:var(--color-Plasmador);">${stats.maxInvestiture}</strong></div>` : ''}
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#6dbf67;"></span>Movimento</span> <strong class="stat-val">${stats.movement}</strong></div>
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#b08ae0;"></span>Sentidos</span> <strong class="stat-val">${stats.senses}</strong></div>
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#e0a84b;"></span>Carga</span> <strong class="stat-val">${stats.lifting}</strong></div>
+      <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#5bc8c0;"></span>Recuperação</span> <strong class="stat-val">${stats.recDie}</strong></div>
+    `;
   }
 
   function getMaxPericiaRank() {
@@ -447,10 +515,10 @@ const App = (() => {
     renderPoints();
     renderAttributes();
     renderDefenses();
+    renderStats();
     renderPericias();
     renderLevelDisplay();
     renderRadiantSection();
-    renderRadiantPericias();
     // Lock race buttons when not level 1
     const locked = state.profile.level !== 1;
     document.querySelectorAll('.race-btn').forEach(btn => {
@@ -632,13 +700,27 @@ const App = (() => {
     document.getElementById('radiant-wheel').classList.remove('visible');
   }
 
+  // async function selectRadiantOrder(cls) {
+  //   state.profile.radiantClass = cls;
+  //   await buildRadiantWheel(); // re-render with highlight
+
+  //   setTimeout(() => {
+  //     hideRadiantWheel();
+  //     renderRadiantSection();
+  //     renderClassTabs();
+  //     rebuildTree();
+  //   }, 420);
+  // }
   async function selectRadiantOrder(cls) {
     state.profile.radiantClass = cls;
-    await buildRadiantWheel(); // re-render with highlight
+    // Ao escolher, já limpamos surtos anteriores se houver troca antes de selar
+    state.radiantPericias = {}; 
+    
+    await buildRadiantWheel(); 
 
     setTimeout(() => {
       hideRadiantWheel();
-      renderRadiantSection();
+      renderSidebar(); // Força a atualização de toda a barra lateral, incluindo perícias
       renderClassTabs();
       rebuildTree();
     }, 420);
@@ -685,11 +767,19 @@ const App = (() => {
       `;
       container.appendChild(div);
       div.querySelector('#radiant-alter-btn').addEventListener('click', showRadiantWheel);
+      // div.querySelector('#radiant-seal-btn').addEventListener('click', () => {
+      //   state.profile.radiantClassLocked = true;
+      //   renderRadiantSection();
+      //   notify('Ordem selada! Apenas um Reset pode desfazer.');
+      // });
       div.querySelector('#radiant-seal-btn').addEventListener('click', () => {
         state.profile.radiantClassLocked = true;
-        renderRadiantSection();
-        notify('Ordem selada! Apenas um Reset pode desfazer.');
+        // Opcional: Aqui você pode deduzir o ponto de talento se quiser automatizar
+        // state.spentTalents++; 
+        renderSidebar(); // Garante que os surtos apareçam na lista agora que está selado
+        notify('Ordem selada! Perícias de Fluxo desbloqueadas.');
       });
+      
     } else {
       // Sealed — show lock badge, no change allowed
       const color = clsColor(cls);
@@ -723,18 +813,41 @@ const App = (() => {
     const grid = document.createElement('div');
     grid.className = 'pericias-grid surtos-grid';
 
+    // for (const key of perKeys) {
+    //   const info = CosData.PERICIAS_RADIANTES[key];
+    //   if (!info) continue;
+    //   const val = state.radiantPericias[key] || 0;
+    //   const div = document.createElement('div');
+    //   div.className = 'pericia-item';
+    //   div.innerHTML = `
+    //     <span class="pericia-name surto-name">${info.name}</span>
+    //     <div class="pericia-controls">
+    //       <button class="pericia-btn" data-radper="${key}" data-dir="-1">&minus;</button>
+    //       <span class="pericia-val">${val}</span>
+    //       <button class="pericia-btn" data-radper="${key}" data-dir="1">+</button>
+    //     </div>
+    //   `;
+    //   grid.appendChild(div);
+    // }
+
     for (const key of perKeys) {
       const info = CosData.PERICIAS_RADIANTES[key];
       if (!info) continue;
-      const val = state.radiantPericias[key] || 0;
+      
+      const rank = state.radiantPericias[key] || 0;
+      const attrVal = state.attributes[info.attr] || 0;
+      const total = rank + attrVal;
+
       const div = document.createElement('div');
       div.className = 'pericia-item';
       div.innerHTML = `
-        <span class="pericia-name surto-name">${info.name}</span>
+        <span class="pericia-name surto-name">
+          ${info.name} <span style="font-size: 0.7em; color: var(--text-muted)">(${CosData.ATTRIBUTES[info.attr].abbr})</span>
+        </span>
         <div class="pericia-controls">
-          <button class="pericia-btn" data-radper="${key}" data-dir="-1">&minus;</button>
-          <span class="pericia-val">${val}</span>
-          <button class="pericia-btn" data-radper="${key}" data-dir="1">+</button>
+          <button class="pericia-btn" data-radper="${key}" data-dir="-1" title="Diminuir Rank">&minus;</button>
+          <span class="pericia-val" title="Rank: ${rank} | Atributo: ${attrVal}">${total}</span>
+          <button class="pericia-btn" data-radper="${key}" data-dir="1" title="Aumentar Rank">+</button>
         </div>
       `;
       grid.appendChild(div);
@@ -803,16 +916,41 @@ const App = (() => {
       container.appendChild(div);
     }
 
+    // container.querySelectorAll('.attr-btn').forEach(btn => {
+    //   btn.addEventListener('click', () => {
+    //     const attr = btn.dataset.attr;
+    //     const dir = parseInt(btn.dataset.dir);
+    //     const newVal = state.attributes[attr] + dir;
+    //     if (newVal < 0) return;
+    //     if (dir > 0 && getAttrPointsRemaining() <= 0) {
+    //       notify('Sem pontos de atributo');
+    //       return;
+    //     }
+    //     state.attributes[attr] = newVal;
+    //     renderSidebar();
+    //   });
+    // });
     container.querySelectorAll('.attr-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const attr = btn.dataset.attr;
         const dir = parseInt(btn.dataset.dir);
         const newVal = state.attributes[attr] + dir;
+        
+        // Define o máximo permitido baseado no nível atual
+        const maxVal = state.profile.level === 1 ? 3 : 5;
+
         if (newVal < 0) return;
-        if (dir > 0 && getAttrPointsRemaining() <= 0) {
-          notify('Sem pontos de atributo');
+        
+        if (newVal > maxVal) {
+          notify(`O limite máximo para atributos no Nível ${state.profile.level} é ${maxVal}.`);
           return;
         }
+        
+        if (dir > 0 && getAttrPointsRemaining() <= 0) {
+          notify('Sem pontos de atributo disponíveis');
+          return;
+        }
+        
         state.attributes[attr] = newVal;
         renderSidebar();
       });
@@ -839,43 +977,277 @@ const App = (() => {
     `;
   }
 
+  // function renderPericias() {
+  //   const container = document.getElementById('pericias-grid');
+  //   if (!container) return;
+  //   container.innerHTML = '';
+
+  //   // for (const [key, info] of Object.entries(CosData.PERICIAS)) {
+  //   //   const val = state.pericias[key];
+  //   //   const div = document.createElement('div');
+  //   //   div.className = 'pericia-item';
+  //   //   div.innerHTML = `
+  //   //     <span class="pericia-name" title="${info.en}">${info.name}</span>
+  //   //     <div class="pericia-controls">
+  //   //       <button class="pericia-btn" data-per="${key}" data-dir="-1">&minus;</button>
+  //   //       <span class="pericia-val">${val}</span>
+  //   //       <button class="pericia-btn" data-per="${key}" data-dir="1">+</button>
+  //   //     </div>
+  //   //   `;
+  //   //   container.appendChild(div);
+  //   // }
+  //   for (const [key, info] of Object.entries(CosData.PERICIAS)) {
+  //     const rank = state.pericias[key] || 0;
+  //     const attrVal = state.attributes[info.attr] || 0;
+  //     const total = rank + attrVal; // Soma o Rank com o Atributo Base
+
+  //     const div = document.createElement('div');
+  //     div.className = 'pericia-item';
+  //     div.innerHTML = `
+  //       <span class="pericia-name" title="${info.en}">
+  //         ${info.name} <span style="font-size: 0.7em; color: var(--text-muted)">(${CosData.ATTRIBUTES[info.attr].abbr})</span>
+  //       </span>
+  //       <div class="pericia-controls">
+  //         <button class="pericia-btn" data-per="${key}" data-dir="-1" title="Diminuir Rank">&minus;</button>
+  //         <span class="pericia-val" title="Rank: ${rank} | Atributo: ${attrVal}">${total}</span>
+  //         <button class="pericia-btn" data-per="${key}" data-dir="1" title="Aumentar Rank">+</button>
+  //       </div>
+  //     `;
+  //     container.appendChild(div);
+  //   }
+
+  //   container.querySelectorAll('.pericia-btn').forEach(btn => {
+  //     btn.addEventListener('click', () => {
+  //       const per = btn.dataset.per;
+  //       const dir = parseInt(btn.dataset.dir);
+  //       const newVal = state.pericias[per] + dir;
+  //       const maxRank = getMaxPericiaRank();
+  //       if (newVal < 0 || newVal > maxRank) return;
+  //       if (dir > 0 && getPericiaPointsRemaining() <= 0) {
+  //         notify('Sem pontos de pericia');
+  //         return;
+  //       }
+  //       state.pericias[per] = newVal;
+  //       renderSidebar();
+  //       // Rebuild tree keeping view
+  //       rebuildTree(true);
+  //     });
+  //   });
+  // }
+
+  // function renderPericias() {
+  //   const container = document.getElementById('pericias-grid');
+  //   if (!container) return;
+  //   container.innerHTML = '';
+
+  //   // 1. Perícias Base
+  //   for (const [key, info] of Object.entries(CosData.PERICIAS)) {
+  //     const rank = state.pericias[key] || 0;
+  //     const attrVal = state.attributes[info.attr] || 0;
+  //     const total = rank + attrVal;
+
+  //     const div = document.createElement('div');
+  //     div.className = 'pericia-item';
+  //     div.innerHTML = `
+  //       <span class="pericia-name" title="${info.en}">
+  //         ${info.name} <span style="font-size: 0.7em; color: var(--text-muted)">(${CosData.ATTRIBUTES[info.attr].abbr})</span>
+  //       </span>
+  //       <div class="pericia-controls">
+  //         <button class="pericia-btn" data-per="${key}" data-dir="-1" title="Diminuir Rank">&minus;</button>
+  //         <span class="pericia-val" title="Rank: ${rank} | Atributo: ${attrVal}">${total}</span>
+  //         <button class="pericia-btn" data-per="${key}" data-dir="1" title="Aumentar Rank">+</button>
+  //       </div>
+  //     `;
+  //     container.appendChild(div);
+  //   }
+
+  //   // 2. Perícias Radiantes (Junto na lista)
+  //   const cls = state.profile.radiantClass;
+  //   if (cls) {
+  //     const perKeys = CosData.RADIANT_CLASS_PERICIAS[cls] || [];
+  //     if (perKeys.length > 0) {
+  //       const sep = document.createElement('div');
+  //       sep.style.gridColumn = '1 / -1';
+  //       sep.style.marginTop = '8px';
+  //       sep.style.paddingTop = '8px';
+  //       sep.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+  //       sep.style.color = clsColor(cls);
+  //       sep.style.fontSize = '0.75em';
+  //       sep.style.textTransform = 'uppercase';
+  //       sep.style.letterSpacing = '1px';
+  //       sep.textContent = 'Surtos Radiantes';
+  //       container.appendChild(sep);
+
+  //       for (const key of perKeys) {
+  //         const info = CosData.PERICIAS_RADIANTES[key];
+  //         if (!info) continue;
+          
+  //         const rank = state.radiantPericias[key] || 0;
+  //         const attrVal = state.attributes[info.attr] || 0;
+  //         const total = rank + attrVal;
+
+  //         const div = document.createElement('div');
+  //         div.className = 'pericia-item';
+  //         div.innerHTML = `
+  //           <span class="pericia-name surto-name" style="color: ${clsColor(cls)};">
+  //             ${info.name} <span style="font-size: 0.7em; color: var(--text-muted)">(${CosData.ATTRIBUTES[info.attr].abbr})</span>
+  //           </span>
+  //           <div class="pericia-controls">
+  //             <button class="pericia-btn rad" data-radper="${key}" data-dir="-1" title="Diminuir Rank">&minus;</button>
+  //             <span class="pericia-val" title="Rank: ${rank} | Atributo: ${attrVal}">${total}</span>
+  //             <button class="pericia-btn rad" data-radper="${key}" data-dir="1" title="Aumentar Rank">+</button>
+  //           </div>
+  //         `;
+  //         container.appendChild(div);
+  //       }
+  //     }
+  //   }
+
+  //   // Eventos Perícias Normais
+  //   container.querySelectorAll('.pericia-btn:not(.rad)').forEach(btn => {
+  //     btn.addEventListener('click', () => {
+  //       const per = btn.dataset.per;
+  //       const dir = parseInt(btn.dataset.dir);
+  //       const newVal = state.pericias[per] + dir;
+  //       const maxRank = getMaxPericiaRank();
+  //       if (newVal < 0 || newVal > maxRank) return;
+  //       if (dir > 0 && getPericiaPointsRemaining() <= 0) {
+  //         notify('Sem pontos de pericia');
+  //         return;
+  //       }
+  //       state.pericias[per] = newVal;
+  //       renderSidebar();
+  //       rebuildTree(true);
+  //     });
+  //   });
+
+  //   // Eventos Perícias Radiantes
+  //   container.querySelectorAll('.pericia-btn.rad').forEach(btn => {
+  //     btn.addEventListener('click', () => {
+  //       const key = btn.dataset.radper;
+  //       const dir = parseInt(btn.dataset.dir);
+  //       const newVal = (state.radiantPericias[key] || 0) + dir;
+  //       const maxRank = getMaxPericiaRank();
+  //       if (newVal < 0 || newVal > maxRank) return;
+  //       if (dir > 0 && getPericiaPointsRemaining() <= 0) {
+  //         notify('Sem pontos de pericia');
+  //         return;
+  //       }
+  //       state.radiantPericias[key] = newVal;
+  //       renderSidebar();
+  //       rebuildTree(true);
+  //     });
+  //   });
+  // }
   function renderPericias() {
     const container = document.getElementById('pericias-grid');
     if (!container) return;
     container.innerHTML = '';
 
+    const maxRank = getMaxPericiaRank();
+
+    // Helper para criar as 5 esferas
+    const createSpheres = (currentRank, key, isRadiant = false) => {
+      let spheresHtml = '<div class="sphere-track">';
+      for (let i = 1; i <= 5; i++) {
+        const isActive = i <= currentRank;
+        const isLocked = i > maxRank;
+        spheresHtml += `
+          <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}" 
+               data-idx="${i}" 
+               data-key="${key}" 
+               data-rad="${isRadiant}"
+               title="${isLocked ? 'Bloqueado por Nível' : 'Rank ' + i}">
+          </div>`;
+      }
+      spheresHtml += '</div>';
+      return spheresHtml;
+    };
+
+    // 1. Perícias Base
     for (const [key, info] of Object.entries(CosData.PERICIAS)) {
-      const val = state.pericias[key];
+      const rank = state.pericias[key] || 0;
+      const attrVal = state.attributes[info.attr] || 0;
+      const total = rank + attrVal;
+
       const div = document.createElement('div');
       div.className = 'pericia-item';
       div.innerHTML = `
-        <span class="pericia-name" title="${info.en}">${info.name}</span>
-        <div class="pericia-controls">
-          <button class="pericia-btn" data-per="${key}" data-dir="-1">&minus;</button>
-          <span class="pericia-val">${val}</span>
-          <button class="pericia-btn" data-per="${key}" data-dir="1">+</button>
+        <span class="pericia-name">
+          ${info.name} <small style="opacity:0.5">(${CosData.ATTRIBUTES[info.attr].abbr})</small>
+        </span>
+        <div class="pericia-controls-new">
+          ${createSpheres(rank, key)}
+          <span class="pericia-total-val">${total}</span>
         </div>
       `;
       container.appendChild(div);
     }
 
-    container.querySelectorAll('.pericia-btn').forEach(btn => {
+    // 2. Surtos (Só aparecem se uma ordem estiver selecionada ou selada)
+    const cls = state.profile.radiantClass;
+    if (cls) {
+      const perKeys = CosData.RADIANT_CLASS_PERICIAS[cls] || [];
+      const sep = document.createElement('div');
+      sep.className = 'pericia-separator';
+      sep.style = `grid-column: 1/-1; margin: 10px 0 5px; font-size: 10px; color: ${clsColor(cls)}; border-bottom: 1px solid ${clsColor(cls)}44; text-transform: uppercase;`;
+      sep.textContent = `Surtos de ${cls}`;
+      container.appendChild(sep);
+
+      for (const key of perKeys) {
+        const info = CosData.PERICIAS_RADIANTES[key];
+        const rank = state.radiantPericias[key] || 0;
+        const attrVal = state.attributes[info.attr] || 0;
+        const total = rank + attrVal;
+
+        const div = document.createElement('div');
+        div.className = 'pericia-item';
+        div.innerHTML = `
+          <span class="pericia-name" style="color:${clsColor(cls)}">${info.name}</span>
+          <div class="pericia-controls-new">
+            ${createSpheres(rank, key, true)}
+            <span class="pericia-total-val">${total}</span>
+          </div>
+        `;
+        container.appendChild(div);
+      }
+    }
+
+    // Eventos de clique nas esferas
+    container.querySelectorAll('.sphere-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const per = btn.dataset.per;
-        const dir = parseInt(btn.dataset.dir);
-        const newVal = state.pericias[per] + dir;
-        const maxRank = getMaxPericiaRank();
-        if (newVal < 0 || newVal > maxRank) return;
-        if (dir > 0 && getPericiaPointsRemaining() <= 0) {
-          notify('Sem pontos de pericia');
+        const idx = parseInt(btn.dataset.idx);
+        const key = btn.dataset.key;
+        const isRadiant = btn.dataset.rad === 'true';
+        
+        if (idx > maxRank) {
+          notify(`Nível insuficiente para Rank ${idx}`);
           return;
         }
-        state.pericias[per] = newVal;
+
+        const currentVal = isRadiant ? (state.radiantPericias[key] || 0) : (state.pericias[key] || 0);
+        // Se clicar na esfera que já é o rank atual, ele "desupa" para o rank anterior
+        const newVal = (currentVal === idx) ? idx - 1 : idx;
+
+        // Cálculo de custo (diferença de pontos)
+        const cost = newVal - currentVal;
+        if (cost > 0 && getPericiaPointsRemaining() < cost) {
+          notify('Sem pontos de perícia disponíveis');
+          return;
+        }
+
+        if (isRadiant) state.radiantPericias[key] = newVal;
+        else state.pericias[key] = newVal;
+
         renderSidebar();
-        // Rebuild tree keeping view
         rebuildTree(true);
       });
     });
+  }
+
+  // Substitua o renderRadiantPericias por uma função vazia para não quebrar outras chamadas
+  function renderRadiantPericias() { 
+      // Obsoleto: os surtos agora são renderizados junto com as perícias em renderPericias()
   }
 
   function renderClassTabs() {
@@ -890,10 +1262,9 @@ const App = (() => {
     allBtn.style.borderBottomColor = state.activeClass === '_all' ? 'var(--accent-gold)' : 'transparent';
     allBtn.addEventListener('click', () => {
       if (state.activeClass === '_all') return;
-      triggerTabFlash();
       state.activeClass = '_all';
       renderClassTabs();
-      rebuildTree();
+      triggerTabSlide(() => rebuildTree());
     });
     container.appendChild(allBtn);
 
@@ -909,10 +1280,9 @@ const App = (() => {
       btn.style.borderBottomColor = cls === state.activeClass ? `var(--color-${cls})` : 'transparent';
       btn.addEventListener('click', () => {
         if (state.activeClass === cls) return;
-        triggerTabFlash();
         state.activeClass = cls;
         renderClassTabs();
-        rebuildTree();
+        triggerTabSlide(() => rebuildTree());
       });
       container.appendChild(btn);
     }
@@ -932,10 +1302,9 @@ const App = (() => {
       rbtn.style.color = rcls === state.activeClass ? rColor : '';
       rbtn.addEventListener('click', () => {
         if (state.activeClass === rcls) return;
-        triggerTabFlash();
         state.activeClass = rcls;
         renderClassTabs();
-        rebuildTree();
+        triggerTabSlide(() => rebuildTree());
       });
       container.appendChild(rbtn);
     }
@@ -1019,12 +1388,37 @@ const App = (() => {
     if (tt) tt.classList.remove('visible');
   }
 
-  // ---- TAB FLASH ----
-  function triggerTabFlash() {
+  // ---- TAB SLIDE TRANSITION ----
+  const SLIDE_MS = 160;
+
+  function triggerTabSlide(callback) {
     const flash = document.getElementById('viewport-flash');
-    if (!flash) return;
-    flash.classList.add('active');
-    setTimeout(() => flash.classList.remove('active'), 80);
+    if (!flash) { callback(); return; }
+
+    // 1. Position off-screen right instantly
+    flash.style.transition = 'none';
+    flash.style.transform = 'translateX(100%)';
+    void flash.offsetWidth; // force reflow
+
+    // 2. Slide in (cover viewport)
+    flash.style.transition = `transform ${SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+    flash.style.transform = 'translateX(0)';
+
+    setTimeout(() => {
+      // 3. Swap content while covered
+      callback();
+
+      // 4. Slide out to left (reveal new tree)
+      flash.style.transition = `transform ${SLIDE_MS}ms cubic-bezier(0.4, 0, 1, 1)`;
+      flash.style.transform = 'translateX(-100%)';
+
+      setTimeout(() => {
+        // 5. Reset silently to off-screen right for next use
+        flash.style.transition = 'none';
+        flash.style.transform = 'translateX(100%)';
+      }, SLIDE_MS + 20);
+
+    }, SLIDE_MS);
   }
 
   // ---- NOTIFICATIONS ----
@@ -1143,6 +1537,7 @@ const App = (() => {
     const data = {
       profile: state.profile,
       attributes: state.attributes,
+      attrHistory: state.attrHistory,
       pericias: state.pericias,
       radiantPericias: state.radiantPericias,
       unlockedSkills: [...state.unlockedSkills],
@@ -1161,6 +1556,7 @@ const App = (() => {
       const data = JSON.parse(raw);
       state.profile = { ...state.profile, radiantClassLocked: false, ...data.profile };
       state.attributes = { ...state.attributes, ...data.attributes };
+      state.attrHistory = data.attrHistory || {};
       state.pericias = { ...state.pericias, ...data.pericias };
       state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
       state.unlockedSkills = new Set(data.unlockedSkills || []);
@@ -1184,6 +1580,7 @@ const App = (() => {
   function resetProfile() {
     state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false };
     state.attributes = { forca:0, velocidade:0, intelecto:0, vontade:0, consciencia:0, presenca:0 };
+    state.attrHistory = {};
     initPericias();
     state.unlockedSkills = new Set();
     state.freeUnlockedSkills = new Set();
@@ -1322,16 +1719,63 @@ const App = (() => {
       });
     });
 
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('closed');
+      document.getElementById('viewport').classList.toggle('expanded');
+      document.body.classList.toggle('sidebar-closed');
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 310);
+    }
+
+    document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-reopen')?.addEventListener('click', toggleSidebar);
+
+    // document.getElementById('lvl-up')?.addEventListener('click', () => {
+    //   if (state.profile.level < 30) {
+    //     state.profile.level++;
+    //     renderSidebar();
+    //     rebuildTree(true);
+    //   }
+    // });
+    // document.getElementById('lvl-down')?.addEventListener('click', () => {
+    //   if (state.profile.level > 1) {
+    //     state.profile.level--;
+    //     renderSidebar();
+    //     rebuildTree(true);
+    //   }
+    // });
     document.getElementById('lvl-up')?.addEventListener('click', () => {
+      // Bloqueia qualquer up se houver pontos pendentes
+      if (getAttrPointsRemaining() > 0) {
+        notify('Gaste todos os seus pontos de atributo disponíveis antes de subir de nível!');
+        return;
+      }
+      
+      // Opcional, mas trava o jogador de esquecer as perícias também
+      if (getPericiaPointsRemaining() > 0) {
+        notify('Gaste todos os seus pontos de perícia disponíveis antes de subir de nível!');
+        return;
+      }
+
+      // 📸 Salva a fotografia dos atributos exatos neste nível
+      state.attrHistory[state.profile.level] = { ...state.attributes };
+
       if (state.profile.level < 30) {
         state.profile.level++;
         renderSidebar();
         rebuildTree(true);
       }
     });
+
     document.getElementById('lvl-down')?.addEventListener('click', () => {
       if (state.profile.level > 1) {
-        state.profile.level--;
+        const prevLevel = state.profile.level - 1;
+        state.profile.level = prevLevel;
+        
+        // ⏪ Restaura os atributos exatos do nível anterior (devolve os pontos)
+        if (state.attrHistory[prevLevel]) {
+          state.attributes = { ...state.attrHistory[prevLevel] };
+        }
+        
         renderSidebar();
         rebuildTree(true);
       }
@@ -1381,8 +1825,14 @@ const App = (() => {
       console.log('[Sheet] PDFDocument criado');
       const form = pdfDoc.getForm();
 
-      function setField(name, value) {
-        try { form.getTextField(name).setText(value != null ? String(value) : ''); } catch(e) {}
+      function setField(name, value, fontSize = null) {
+        try { 
+          const field = form.getTextField(name);
+          field.setText(value != null ? String(value) : ''); 
+          if (fontSize !== null) {
+            field.setFontSize(fontSize); // Trava o tamanho da fonte se o parâmetro for passado
+          }
+        } catch(e) {}
       }
 
       function setCheck(name, checked) {
@@ -1408,7 +1858,6 @@ const App = (() => {
       forBothPages('Character Name', p.name || '');
       forBothPages('Level', String(p.level));
       forBothPages('Ancestry', p.race === 'human' ? 'Humano' : 'Cantor');
-      // forBothPages('Paths', p.radiantClass || '');
 
       const allExportSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
       
@@ -1432,12 +1881,12 @@ const App = (() => {
       forBothPages('Paths', pathsStr);
 
       // Atributos (duplicados em ambas as páginas)
-      forBothPages('Strength',  a.forca       > 0 ? String(a.forca)       : '');
-      forBothPages('Speed',     a.velocidade  > 0 ? String(a.velocidade)  : '');
-      forBothPages('Intellect', a.intelecto   > 0 ? String(a.intelecto)   : '');
-      forBothPages('Willpower', a.vontade     > 0 ? String(a.vontade)     : '');
-      forBothPages('Awareness', a.consciencia > 0 ? String(a.consciencia) : '');
-      forBothPages('Presence',  a.presenca    > 0 ? String(a.presenca)    : '');
+      forBothPages('Strength',  '   '+String(a.forca)      );
+      forBothPages('Speed',     '   '+String(a.velocidade) );
+      forBothPages('Intellect', '   '+String(a.intelecto)  );
+      forBothPages('Willpower', '   '+String(a.vontade)    );
+      forBothPages('Awareness', '   '+String(a.consciencia));
+      forBothPages('Presence',  '   '+String(a.presenca)   );
 
       // Defesas (duplicadas em ambas as páginas)
       forBothPages('Physical Defense',  String(defenses.physical));
@@ -1465,10 +1914,7 @@ const App = (() => {
         persuasao:       'Persuasion',
         sobrevivencia:   'Survival',
       };
-      // for (const [key, fieldName] of Object.entries(SKILL_SCORE_FIELDS)) {
-      //   const val = state.pericias[key] || 0;
-      //   setField(fieldName, val > 0 ? String(val) : '');
-      // }
+
       for (const [key, fieldName] of Object.entries(SKILL_SCORE_FIELDS)) {
         // Pega o valor alocado (rank) na perícia
         const rank = state.pericias[key] || 0;
@@ -1483,7 +1929,7 @@ const App = (() => {
         const totalBonus = rank + attrBonus;
 
         // Preenche o campo da ficha (apenas se for maior que zero para manter limpo)
-        setField(fieldName, totalBonus > 0 ? String(totalBonus) : '');
+        setField(fieldName, String(totalBonus));
       }
 
 
@@ -1523,9 +1969,9 @@ const App = (() => {
         
         // Slots em ordem (Esquerda, Centro, Direita) mapeando os campos exatos
         const slots = [
-          { abbrField: 'Physical Custom',  nameField: 'Custom Skill 1', scoreField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
-          { abbrField: 'Cognitive Custom', nameField: 'Custom Skill 2', scoreField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
-          { abbrField: 'Spiritual Custom', nameField: 'Custom Skill 3', scoreField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
+          { scoreField: 'Physical Custom',  nameField: 'Custom Skill 1', abbrField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
+          { scoreField: 'Cognitive Custom', nameField: 'Custom Skill 2', abbrField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
+          { scoreField: 'Spiritual Custom', nameField: 'Custom Skill 3', abbrField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
         ];
 
         let currentSlotIndex = 0; // Vai preenchendo da esquerda pra direita
@@ -1546,13 +1992,13 @@ const App = (() => {
           const targetSlot = slots[currentSlotIndex];
 
           // 1. Preenche a caixinha menor com a abreviação do Atributo
-          setField(targetSlot.abbrField, attrAbbr);
+          setField(targetSlot.abbrField, attrAbbr, 5);
           
           // 2. Preenche o Nome da Perícia (Surto)
           setField(targetSlot.nameField, info.name);
           
           // 3. Preenche o Bônus Total (Atributo + Rank)
-          setField(targetSlot.scoreField, totalBonus > 0 ? String(totalBonus) : '');
+          setField(targetSlot.scoreField, String(totalBonus));
           
           // 4. Preenche os checkboxes (bolinhas)
           for (let i = 0; i < targetSlot.boxes.length; i++) {
@@ -1575,69 +2021,22 @@ const App = (() => {
       setField('Talents 1', uniqueTalents.slice(0, chunk).join('\n'));
       setField('Talents 2', uniqueTalents.slice(chunk, chunk * 2).join('\n'));
       setField('Talents 3', uniqueTalents.slice(chunk * 2).join('\n'));
-
-      // =========================================================
-      // ESTATÍSTICAS DERIVADAS (Saúde, Foco, Movimento, etc.)
-      // =========================================================
       
-      // Tabela de Referência Baseada nos Atributos (Padrão do Sistema)
-      const ATTR_TABLE = {
-        0: { recDie: '1d4',  senses: '1,5m (1q)', mov: '6m (4q)',   lift: '50kg' },
-        1: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
-        2: { recDie: '1d6',  senses: '3m (2q)',   mov: '7,5m (7q)', lift: '100kg' },
-        3: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
-        4: { recDie: '1d8',  senses: '6m (4q)',   mov: '9m (6q)',   lift: '250kg' },
-        5: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
-        6: { recDie: '1d10', senses: '15m (10q)', mov: '12m (8q)',  lift: '500kg' },
-        7: { recDie: '1d12', senses: '30m (20q)', mov: '18m (12q)', lift: '2500kg' },
-        8: { recDie: '1d12', senses: '30m (20q)', mov: '18m (16q)', lift: '2500kg' },
-        9: { recDie: '1d20', senses: '30m (20q)', mov: '24m (16q)', lift: '5000kg' }
-      };
-
-      // Garante que o valor do atributo não quebre a tabela (limite de 0 a 9)
-      const safeAttr = (val) => Math.min(Math.max(val || 0, 0), 9);
-
-      // --- CÁLCULO DA VIDA MÁXIMA ---
-      // A vida máxima não é um valor estático, ela escala por nível.
-      // Este loop percorre a tabela de níveis (LEVEL_TABLE do seu data.js) 
-      // e soma a vida exata que o jogador tem direito.
-      let maxHealth = 0;
-      for (let i = 0; i < CosData.LEVEL_TABLE.length; i++) {
-        const row = CosData.LEVEL_TABLE[i];
-        if (row.level > p.level) break; // Para de somar ao atingir o nível atual
-        
-        // Verifica se a string no data.js contém a Força (ex: '10+FOR', '4+FOR')
-        if (typeof row.hpGain === 'string' && row.hpGain.includes('+FOR')) {
-          maxHealth += parseInt(row.hpGain.split('+')[0]) + a.forca;
-        } else {
-          maxHealth += Number(row.hpGain) || 0;
-        }
-      }
-
-      // --- FOCO E INVESTIDURA ---
-      const maxFocus = 2 + a.vontade;
-      const maxInvestiture = p.radiantClass ? 2 + a.consciencia : 0;
-
-      // --- CONSULTA NA TABELA ---
-      const recDie = ATTR_TABLE[safeAttr(a.vontade)].recDie;
-      const senses = ATTR_TABLE[safeAttr(a.consciencia)].senses;
-      const movement = ATTR_TABLE[safeAttr(a.velocidade)].mov;
-      const lifting = ATTR_TABLE[safeAttr(a.forca)].lift;
+      const stats = getDerivedStats();
 
       // --- PREENCHER OS CAMPOS DA FICHA ---
-      setField('Health Maximum', String(maxHealth));      
-      setField('Focus Maximum', String(maxFocus));
-      if (maxInvestiture > 0) {
-        setField('Investiture Maximum 4', String(maxInvestiture));
-      }
-      if (maxInvestiture === 0) {
-        setField('Investiture Maximum 4', '0');
+      setField('Health Maximum', '    '+String(stats.maxHealth));      
+      setField('Focus Maximum', '    '+String(stats.maxFocus));
+      if (stats.maxInvestiture > 0) { 
+        setField('Investiture Maximum 4', '    '+String(stats.maxInvestiture));
+      } else {
+        setField('Investiture Maximum 4', '    0');
       }
       
-      setField('Recovery Die', recDie);
-      setField('Senses Range', senses);
-      setField('Movement', movement);
-      setField('Lifting Capacity', lifting);
+      setField('Recovery Die', '        '+stats.recDie);
+      setField('Senses Range', '        '+stats.senses, 14);
+      setField('Movement', '   '+stats.movement, 14);
+      setField('Lifting Capacity', '   '+stats.lifting, 14);
 
       // Download
       console.log('[Sheet] Salvando PDF...');
