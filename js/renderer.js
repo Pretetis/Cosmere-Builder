@@ -511,11 +511,11 @@ const SkillRenderer = (() => {
     const crystalGeo = new THREE.IcosahedronGeometry(NODE_RADIUS * 0.48, 0); // faceted, detail=0
     const crystalMat = new THREE.MeshPhysicalMaterial({
       color: baseColor,
-      emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 0.9 : canUnlock ? 0.25 : 0.08),
+      emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 1.6 : canUnlock ? 0.55 : 0.08),
       roughness: 0.15,
       metalness: 0.3,
       transparent: true,
-      opacity: isUnlocked ? 0.92 : canUnlock ? 0.5 : 0.25,
+      opacity: isUnlocked ? 0.95 : canUnlock ? 0.6 : 0.25,
       clearcoat: 0.6,
       clearcoatRoughness: 0.2,
     });
@@ -533,11 +533,11 @@ const SkillRenderer = (() => {
     const geo = new THREE.SphereGeometry(NODE_RADIUS, 32, 32);
     const mat = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
-      emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 0.08 : canUnlock ? 0.04 : 0.02),
+      emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 0.18 : canUnlock ? 0.07 : 0.02),
       roughness: 0.05,
       metalness: 0.0,
       transparent: true,
-      opacity: isUnlocked ? 0.25 : 0.3,
+      opacity: isUnlocked ? 0.3 : 0.3,
       // opacity: isUnlocked ? 0.01 : 0.05,
       clearcoat: 1.0,
       clearcoatRoughness: 0.05,
@@ -554,7 +554,7 @@ const SkillRenderer = (() => {
       map: getGlowTexture(),
       color: glowColor,
       transparent: true,
-      opacity: isUnlocked ? 0.45 : canUnlock ? 0.15 : 0.06,
+      opacity: isUnlocked ? 0.70 : canUnlock ? 0.25 : 0.06,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true,
@@ -566,7 +566,7 @@ const SkillRenderer = (() => {
     mainGroup.add(glowMesh);
 
     if (isUnlocked) {
-      const light = new THREE.PointLight(baseColor, 0.5, 3.5);
+      const light = new THREE.PointLight(baseColor, 1.0, 4.5);
       light.position.copy(mesh.position);
       mainGroup.add(light);
     }
@@ -932,7 +932,9 @@ const SkillRenderer = (() => {
           }
         }
       }
-      createClassLabel(cls, cx, cy);
+      // Place label beyond the outermost nodes, in the outward direction from centre
+      const labelDist = 12.5;
+      createClassLabel(cls, Math.cos(outwardAngle) * labelDist, Math.sin(outwardAngle) * labelDist);
     }
 
     // Build full entry list: radiant first (top), then 6 base classes, then additional (Cantor etc.)

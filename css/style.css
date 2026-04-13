@@ -973,6 +973,12 @@ html, body {
 .radiant-wheel-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .radiant-wheel-title {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 5;
   font-family: 'Cinzel', serif;
   font-size: 20px;
   font-weight: 700;
@@ -983,11 +989,17 @@ html, body {
 }
 
 .radiant-wheel-subtitle {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 5;
+  margin-top: 0;
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
   text-align: center;
-  margin-top: -6px;
 }
 
 /* Outer wrapper — controls the visible size */
@@ -1088,10 +1100,14 @@ html, body {
   width: 48px;
   height: 48px;
   opacity: 0.8;
-  transition: opacity 0.2s;
+  filter: saturate(0.45) brightness(0.85);
+  transition: opacity 0.2s, filter 0.2s;
 }
 .rw-order:hover .rw-order-glyph-wrap img,
-.rw-order.selected .rw-order-glyph-wrap img { opacity: 1; }
+.rw-order.selected .rw-order-glyph-wrap img {
+  opacity: 1;
+  filter: saturate(1) brightness(1);
+}
 
 .rw-order-label {
   font-family: 'Cinzel', serif;
@@ -1133,38 +1149,70 @@ html, body {
 /* ---- SURGE NODES ---- */
 .rw-surge {
   position: absolute;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: default;
   z-index: 1;
-  opacity: 0.65;  /* default: visible but subdued */
-  transition: opacity 0.25s;
+  opacity: 0.55;
+  transition: opacity 0.2s;
 }
 .rw-surge.active {
   opacity: 1;
 }
+.rw-surge:hover {
+  opacity: 1;
+  z-index: 3;
+}
 
 .rw-surge img {
-  width: 32px;
-  height: 32px;
-  /* src is pre-colored via JS — no CSS filter needed */
+  width: 24px;
+  height: 24px;
+  transition: filter 0.2s;
+}
+.rw-surge:hover img {
+  filter: brightness(1.5) saturate(1.2);
 }
 
 .rw-surge-label {
-  font-size: 7px;
-  color: var(--text-muted);
+  font-size: 6.5px;
+  color: var(--text-secondary);
   font-family: 'Cinzel', serif;
   letter-spacing: 0.2px;
   text-align: center;
   white-space: nowrap;
-  transition: color 0.25s;
+  transition: color 0.2s;
+}
+.rw-surge:hover .rw-surge-label {
+  color: var(--text-primary);
 }
 /* active label color is set inline by JS */
+
+/* Orders lit up when their shared surge is hovered */
+.rw-order.surge-highlight {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+.rw-order.surge-highlight .rw-order-glyph-wrap {
+  border-color: currentColor;
+  box-shadow: 0 0 14px currentColor;
+}
+.rw-order.surge-highlight .rw-order-glyph-wrap img {
+  opacity: 1;
+  filter: saturate(1) brightness(1.1);
+}
+.rw-order.surge-highlight .rw-order-label {
+  color: var(--text-primary);
+}
+/* Override dimmed state for surge-highlighted orders */
+.rw-order.dimmed.surge-highlight {
+  opacity: 1;
+  filter: none;
+}
 
 /* ============================================================
    RADIANT LOCKED DISPLAY (sidebar)

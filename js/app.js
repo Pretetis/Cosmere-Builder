@@ -79,6 +79,13 @@ const App = (() => {
       const s = el.getAttribute('stroke').toLowerCase();
       if (s === '#000' || s === 'black' || s === '#000000') el.setAttribute('stroke', color);
     });
+    // Also handle fill/stroke declared inside inline style="fill:#000000"
+    root.querySelectorAll('[style]').forEach(el => {
+      let s = el.getAttribute('style');
+      s = s.replace(/fill\s*:\s*(#000000|#000|black)\b/gi, `fill:${color}`);
+      s = s.replace(/stroke\s*:\s*(#000000|#000|black)\b/gi, `stroke:${color}`);
+      el.setAttribute('style', s);
+    });
     const serial = new XMLSerializer().serializeToString(root);
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serial);
   }
@@ -817,10 +824,26 @@ const App = (() => {
       sNode.className = 'rw-surge' + (surgeActive ? ' active' : '');
       sNode.style.left = sx + 'px';
       sNode.style.top = sy + 'px';
+      sNode.dataset.surgeIdx = i;
       sNode.innerHTML = `
         <img src="${surgeSrc}" alt="${surge.name}">
         <div class="rw-surge-label" style="${surgeActive ? `color:${activeColor};opacity:1` : ''}">${surge.name}</div>
       `;
+      // Highlight the two adjacent orders on hover
+      sNode.addEventListener('mouseenter', () => {
+        const cls0 = WHEEL_ORDERS[i];
+        const cls1 = WHEEL_ORDERS[(i + 1) % N];
+        ringEl.querySelectorAll('.rw-order').forEach(el => {
+          if (el.dataset.cls === cls0 || el.dataset.cls === cls1) {
+            el.classList.add('surge-highlight');
+          }
+        });
+      });
+      sNode.addEventListener('mouseleave', () => {
+        ringEl.querySelectorAll('.rw-order.surge-highlight').forEach(el => {
+          el.classList.remove('surge-highlight');
+        });
+      });
       ringEl.appendChild(sNode);
     }
 
@@ -883,8 +906,9 @@ const App = (() => {
     // Scale container to fill ~85% of the smaller viewport dimension
     const container = document.getElementById('radiant-wheel-container');
     if (container) {
-      const available = Math.min(window.innerWidth, window.innerHeight) * 0.85;
-      const scale = Math.min(available / 560, 1.6); // max 1.6×
+      const titleReserve = 90; // space reserved for title + subtitle at top
+      const available = Math.min(window.innerWidth, window.innerHeight - titleReserve) * 0.88;
+      const scale = Math.min(available / 560, 1.3); // max 1.3× to avoid overflow
       container.style.transform = `scale(${scale})`;
     }
     await buildRadiantWheel();
