@@ -688,7 +688,8 @@ const App = (() => {
           rebuildTree(true);
           renderSidebar();
           // Re-show modal with updated state
-          showSkillModal(skill);
+          // showSkillModal(skill);
+          hideSkillModal();
         }
       });
     }
