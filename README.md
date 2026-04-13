@@ -26,7 +26,8 @@ Um aplicativo web interativo desenvolvido para facilitar a criação e o gerenci
 
     Servidor Local: Python (http.server).
 
-    ![Seleção da Ordem Radiante](./docs/images/radiant_wheel.png)
+
+ ![Seleção da Ordem Radiante](./docs/images/radiant_wheel.png)
     
 🚀 Tutorial de Instalação e Execução
 
