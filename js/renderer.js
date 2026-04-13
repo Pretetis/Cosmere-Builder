@@ -55,6 +55,7 @@ const SkillRenderer = (() => {
 
   // Cached glow texture (generated once)
   let _glowTexture = null;
+  let _smokeTexture = null;
   // Cached SVG textures (keyed by file path, loaded once each)
   const _svgTextureCache = {};
 
@@ -88,6 +89,26 @@ const SkillRenderer = (() => {
     ctx.fillRect(0, 0, size, size);
     _glowTexture = new THREE.CanvasTexture(canvas);
     return _glowTexture;
+  }
+
+  // Textura de fumaça — falloff mais suave e difuso que o glow
+  function getSmokeTexture() {
+    if (_smokeTexture) return _smokeTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const half = size / 2;
+    const g = ctx.createRadialGradient(half, half, 0, half, half, half);
+    g.addColorStop(0,    'rgba(255,255,255,0.9)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.18)');
+    g.addColorStop(0.8,  'rgba(255,255,255,0.04)');
+    g.addColorStop(1,    'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    _smokeTexture = new THREE.CanvasTexture(canvas);
+    return _smokeTexture;
   }
 
   // ---- INIT ----
@@ -160,7 +181,7 @@ const SkillRenderer = (() => {
       e.preventDefault();
       const zoomMax = _viewMode === 'all' ? 70 : 40;
       const zoomMin = _viewMode === 'all' ? 15 : 8;
-      camera.position.z = Math.max(zoomMin, Math.min(zoomMax, camera.position.z + e.deltaY * 0.01));
+      camera.position.z = Math.max(zoomMin, Math.min(zoomMax, camera.position.z + e.deltaY * 0.03));
     }, { passive: false });
 
     // Start loop
@@ -502,13 +523,33 @@ const SkillRenderer = (() => {
     camera.rotation.x = CAMERA_TILT;
   }
 
+  // ---- GEM GEOMETRY POR RANK ----
+  // Mapeia rank → forma lapidada de gema do Cosmere
+  // Rank 0: icosaedro (d20) — raiz da árvore
+  // Rank 1: octaedro    — Diamante (bipirâmide)
+  // Rank 2: dodecaedro  — Granada / Heliodro / Topázio
+  // Rank 3: prisma hex  — Rubi / Quartzo Fumê / Zircão
+  // Rank 4: tetraedro   — Ametista / Safira (cristal angular)
+  // Rank 5: prisma oct  — Esmeralda (alongado, 8 faces)
+  function getGemGeometry(rank, r) {
+    switch (rank) {
+      case 0:  return new THREE.IcosahedronGeometry(r, 0);
+      case 1:  return new THREE.OctahedronGeometry(r, 0);
+      case 2:  return new THREE.DodecahedronGeometry(r, 0);
+      case 3:  return new THREE.CylinderGeometry(r * 0.65, r, r * 1.0, 6, 1);
+      case 4:  return new THREE.TetrahedronGeometry(r * 1.15, 0);
+      case 5:  return new THREE.CylinderGeometry(r * 0.72, r * 0.72, r * 2.2, 8, 1);
+      default: return new THREE.IcosahedronGeometry(r, 0);
+    }
+  }
+
   // ---- CREATE NODE (Stormlight Sphere with inner Gemstone) ----
   function createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues) {
     const baseColor = isUnlocked ? COLOR_MAP[cls] : canUnlock ? COLOR_MAP[cls] : COLOR_LOCKED;
     const glowColor = isUnlocked ? COLOR_MAP[cls] : canUnlock ? COLOR_MAP[cls] : COLOR_LOCKED;
 
     // -- Inner crystal gemstone (rendered first) --
-    const crystalGeo = new THREE.IcosahedronGeometry(NODE_RADIUS * 0.48, 0); // faceted, detail=0
+    const crystalGeo = getGemGeometry(skill.rank, NODE_RADIUS * 0.48);
     const crystalMat = new THREE.MeshPhysicalMaterial({
       color: baseColor,
       emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 1.6 : canUnlock ? 0.55 : 0.08),
@@ -571,23 +612,34 @@ const SkillRenderer = (() => {
       mainGroup.add(light);
     }
 
-    // Rank 0 (class root) gets special treatment
+    // Rank 0 (class root) gets special treatment — usa cor da própria árvore
+    const rootColor = COLOR_MAP[cls] || COLOR_UNLOCKED;
     if (skill.rank === 0) {
       mesh.scale.setScalar(1.5);
       crystalMesh.scale.setScalar(1.5);
-      glowMesh.scale.set(3.2, 3.2, 1);
-      crystalMat.emissive = new THREE.Color(COLOR_UNLOCKED).multiplyScalar(1.0);
-      crystalMat.color = new THREE.Color(COLOR_UNLOCKED);
-      crystalMat.opacity = 1;
-      mat.emissive = new THREE.Color(COLOR_UNLOCKED).multiplyScalar(0.1);
-      mat.opacity = 0.2;
-      glowMat.color = new THREE.Color(COLOR_UNLOCKED);
-      glowMat.opacity = 0.55;
+      crystalMat.color = new THREE.Color(rootColor);
+      glowMat.color = new THREE.Color(rootColor);
+      if (isUnlocked) {
+        glowMesh.scale.set(3.2, 3.2, 1);
+        crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(1.5);
+        crystalMat.opacity = 1;
+        mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.15);
+        mat.opacity = 0.25;
+        glowMat.opacity = 0.70;
+      } else {
+        glowMesh.scale.set(2.0, 2.0, 1);
+        crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(0.25);
+        crystalMat.opacity = 0.45;
+        mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.03);
+        mat.opacity = 0.18;
+        glowMat.opacity = 0.15;
+      }
     }
 
     mesh.userData = { skill, isUnlocked, canUnlock };
-    const obj = { mesh, skill, glowMesh, crystalMesh, crystalMat, pos, mat, glowMat, baseColor };
+    const obj = { mesh, skill, glowMesh, crystalMesh, crystalMat, pos, mat, glowMat, baseColor, rootColor };
     nodeObjects.push(obj);
+    if (isUnlocked) createGemEmitter(obj);
   }
 
   // ---- CREATE CONNECTION (Smoke Trail Line) ----
@@ -623,33 +675,79 @@ const SkillRenderer = (() => {
   }
 
   // ---- SMOKE PARTICLES ----
-  function createSmokeAlongLine(from, to, color) {
-    const count = 8;
-    for (let i = 0; i < count; i++) {
-      const t = Math.random();
-      const x = from.x + (to.x - from.x) * t + (Math.random() - 0.5) * 0.15;
-      const y = from.y + (to.y - from.y) * t + (Math.random() - 0.5) * 0.15;
-      const z = from.z + (to.z - from.z) * t + (Math.random() - 0.5) * 0.1;
 
-      const geo = new THREE.SphereGeometry(0.04, 8, 8);
-      const mat = new THREE.MeshBasicMaterial({
+  // Hélix de fumaça luminosa ao longo de uma conexão ativa
+  function createSmokeAlongLine(from, to, color) {
+    const count = 20;
+
+    // Eixos perpendiculares à direção da linha — base do hélix
+    const dir = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z).normalize();
+    const arb = Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const right = new THREE.Vector3().crossVectors(dir, arb).normalize();
+    const perp  = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+    const travelSpeed = 0.10 + Math.random() * 0.05;
+
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: getSmokeTexture(),
         color: color,
         transparent: true,
-        opacity: 0.25,
+        opacity: 0,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y, z);
-      mainGroup.add(mesh);
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(0.55, 0.55, 1);
+      mainGroup.add(sprite);
 
       smokeParticles.push({
-        mesh,
-        basePos: { x, y, z },
+        type: 'helix',
+        mesh: sprite,
         from, to,
-        speed: Math.random() * 0.5 + 0.3,
-        offset: Math.random() * Math.PI * 2,
+        right: right.clone(),
+        perp:  perp.clone(),
+        helixRadius: 0.17,
+        phaseOffset:   (i / count) * Math.PI * 2,
+        travelOffset:  i / count,
+        travelSpeed,
+        turns: 2.5,
+      });
+    }
+  }
+
+  // Partículas que emanam de dentro das gemas desbloqueadas
+  function createGemEmitter(nodeObj) {
+    const count = 7;
+    const color = nodeObj.rootColor || nodeObj.baseColor || 0xffffff;
+
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const speed = 0.07 + Math.random() * 0.10;
+
+      const mat = new THREE.SpriteMaterial({
+        map: getSmokeTexture(),
+        color: color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(0.3, 0.3, 1);
+      mainGroup.add(sprite);
+
+      smokeParticles.push({
+        type: 'gem',
+        mesh: sprite,
+        basePos: { x: nodeObj.pos.x, y: nodeObj.pos.y, z: nodeObj.pos.z },
+        dx: Math.sin(phi) * Math.cos(theta) * speed,
+        dy: Math.sin(phi) * Math.sin(theta) * speed,
+        dz: Math.cos(phi) * speed * 0.5,
         life: Math.random(),
+        lifetime: 1.8 + Math.random() * 1.4,
+        maxOpacity: 0.35 + Math.random() * 0.25,
       });
     }
   }
@@ -684,11 +782,16 @@ const SkillRenderer = (() => {
       obj.crystalMesh.rotation.y += 0.005;
 
       if (obj.skill.rank === 0) {
-        const gs = 3.0 + pulse * 0.4;
-        obj.glowMesh.scale.set(gs, gs, 1);
-        obj.glowMat.opacity = 0.35 + pulse * 0.2;
         obj.crystalMesh.rotation.y = time * 0.3;
-        obj.crystalMat.emissive = new THREE.Color(COLOR_UNLOCKED).multiplyScalar(0.7 + pulse * 0.4);
+        if (obj.mesh.userData.isUnlocked) {
+          const gs = 3.0 + pulse * 0.4;
+          obj.glowMesh.scale.set(gs, gs, 1);
+          obj.glowMat.opacity = 0.35 + pulse * 0.2;
+          obj.crystalMat.emissive = new THREE.Color(obj.rootColor).multiplyScalar(0.8 + pulse * 0.5);
+        } else {
+          obj.glowMat.opacity = 0.08 + pulse * 0.07;
+          obj.crystalMat.emissive = new THREE.Color(obj.rootColor).multiplyScalar(0.12 + pulse * 0.13);
+        }
       } else if (obj.mesh.userData.isUnlocked) {
         const gs = 2.0 + pulse * 0.4;
         obj.glowMesh.scale.set(gs, gs, 1);
@@ -708,13 +811,42 @@ const SkillRenderer = (() => {
 
     // Animate smoke particles
     for (const p of smokeParticles) {
-      const t = time * p.speed + p.offset;
-      p.mesh.position.x = p.basePos.x + Math.sin(t) * 0.08;
-      p.mesh.position.y = p.basePos.y + Math.cos(t * 0.7) * 0.06;
-      p.mesh.position.z = p.basePos.z + Math.sin(t * 1.3) * 0.04;
-      p.mesh.material.opacity = 0.12 + Math.sin(t * 2) * 0.12;
-      const scale = 0.8 + Math.sin(t * 1.5) * 0.4;
-      p.mesh.scale.setScalar(scale);
+      if (p.type === 'helix') {
+        // Partícula avança ao longo da linha e orbita em hélix
+        const t = (p.travelOffset + time * p.travelSpeed) % 1.0;
+        const angle = p.phaseOffset + t * Math.PI * 2 * p.turns;
+
+        const lx = p.from.x + (p.to.x - p.from.x) * t;
+        const ly = p.from.y + (p.to.y - p.from.y) * t;
+        const lz = p.from.z + (p.to.z - p.from.z) * t;
+        const r  = p.helixRadius;
+        const ca = Math.cos(angle), sa = Math.sin(angle);
+
+        p.mesh.position.set(
+          lx + r * (ca * p.right.x + sa * p.perp.x),
+          ly + r * (ca * p.right.y + sa * p.perp.y),
+          lz + r * (ca * p.right.z + sa * p.perp.z),
+        );
+
+        // Fade nas bordas para esconder o loop; pulso suave de tamanho
+        const fade  = Math.sin(t * Math.PI);
+        const scale = 0.42 + Math.sin(time * 2.5 + p.phaseOffset) * 0.10;
+        p.mesh.scale.set(scale, scale, 1);
+        p.mesh.material.opacity = 0.50 * fade;
+
+      } else if (p.type === 'gem') {
+        // Partícula deriva para fora da gema e desvanece
+        p.life = (p.life + 0.007) % 1.0;
+        const age = p.life * p.lifetime;
+        p.mesh.position.set(
+          p.basePos.x + p.dx * age,
+          p.basePos.y + p.dy * age,
+          p.basePos.z + p.dz * age,
+        );
+        p.mesh.material.opacity = Math.sin(p.life * Math.PI) * p.maxOpacity;
+        const scale = 0.12 + p.life * 0.32;
+        p.mesh.scale.set(scale, scale, 1);
+      }
     }
 
     // Animate background particles
@@ -783,9 +915,11 @@ const SkillRenderer = (() => {
     }
 
     for (const obj of nodeObjects) {
+      const wasUnlocked = obj.mesh.userData.isUnlocked;
       const isUnlocked = unlockedSkills.has(obj.skill.id);
       const canUnlock = !isUnlocked && _canUnlockFn ? _canUnlockFn(obj.skill) : false;
       obj.mesh.userData.isUnlocked = isUnlocked;
+      if (!wasUnlocked && isUnlocked) createGemEmitter(obj);
       obj.mesh.userData.canUnlock = canUnlock;
       const cls = currentClass || obj.skill.cls;
       const color = isUnlocked ? COLOR_MAP[cls] : canUnlock ? COLOR_MAP[cls] : COLOR_LOCKED;
@@ -805,16 +939,26 @@ const SkillRenderer = (() => {
       obj.glowMat.opacity = isUnlocked ? 0.45 : canUnlock ? 0.15 : 0.06;
       obj.baseColor = color;
 
-      // Class root always gold
+      // Class root usa cor da própria árvore, com brilho diferenciado por estado
       if (obj.skill.rank === 0) {
-        obj.crystalMat.color.setHex(COLOR_UNLOCKED);
-        obj.crystalMat.emissive = new THREE.Color(COLOR_UNLOCKED).multiplyScalar(1.0);
-        obj.crystalMat.opacity = 1;
-        obj.mat.emissive = new THREE.Color(COLOR_UNLOCKED).multiplyScalar(0.1);
-        obj.mat.opacity = 0.2;
-        obj.glowMat.color.setHex(COLOR_UNLOCKED);
-        obj.glowMat.opacity = 0.55;
-        obj.glowMesh.scale.set(3.2, 3.2, 1);
+        const rootColor = obj.rootColor || COLOR_MAP[currentClass] || COLOR_UNLOCKED;
+        obj.crystalMat.color.setHex(rootColor);
+        obj.glowMat.color.setHex(rootColor);
+        if (isUnlocked) {
+          obj.crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(1.5);
+          obj.crystalMat.opacity = 1;
+          obj.mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.15);
+          obj.mat.opacity = 0.25;
+          obj.glowMat.opacity = 0.70;
+          obj.glowMesh.scale.set(3.2, 3.2, 1);
+        } else {
+          obj.crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(0.25);
+          obj.crystalMat.opacity = 0.45;
+          obj.mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.03);
+          obj.mat.opacity = 0.18;
+          obj.glowMat.opacity = 0.15;
+          obj.glowMesh.scale.set(2.0, 2.0, 1);
+        }
       }
     }
   }
@@ -901,11 +1045,11 @@ const SkillRenderer = (() => {
     // --- Reset camera to flat (no tilt) for panoramic view ---
     mainGroup.rotation.set(0, 0, 0);
     mainGroup.position.set(0, 0, 0);
-    camera.position.set(0, 0, 40);
+    camera.position.set(0, 0, 55);
     camera.rotation.set(0, 0, 0);
 
     const allPositions = {};
-    const scale = 0.41;
+    const scale = 0.58;
 
     // Helper: place one tree at world offset (cx, cy), radiating at outwardAngle
     function placeTree(cls, skills, children, root, cx, cy, outwardAngle, isRadiant) {
@@ -933,7 +1077,7 @@ const SkillRenderer = (() => {
         }
       }
       // Place label beyond the outermost nodes, in the outward direction from centre
-      const labelDist = 12.5;
+      const labelDist = 17.5;
       createClassLabel(cls, Math.cos(outwardAngle) * labelDist, Math.sin(outwardAngle) * labelDist);
     }
 
@@ -946,7 +1090,7 @@ const SkillRenderer = (() => {
     }
 
     const total  = allEntries.length; // 6 without radiant, 7 with
-    const radius = 8;
+    const radius = 11;
 
     // Compute root positions — evenly spaced full circle, starting from top
     const rootPositions = allEntries.map((entry, idx) => {
@@ -956,7 +1100,7 @@ const SkillRenderer = (() => {
 
     // --- Constellation skeleton (behind nodes) ---
     // Spokes: start at inner gap (avoid covering center symbol) → each root
-    const spokeInnerR = 2.8;
+    const spokeInnerR = 3.8;
     for (const rp of rootPositions) {
       mainGroup.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([
