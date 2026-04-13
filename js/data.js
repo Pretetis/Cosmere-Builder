@@ -142,6 +142,12 @@ const CosData = (() => {
   let RADIANT_CLASSES = [];
   let RADIANT_SUBCLASSES = {};
 
+  // --- ADDITIONAL TREES (Cantor race + extra order paths, IDs offset by +20000) ---
+  const ADDITIONAL_ID_OFFSET = 20000;
+  let ADDITIONAL_SKILLS = [];
+  let ADDITIONAL_CLASSES = [];
+  let ADDITIONAL_SUBCLASSES = {};
+
   async function loadRadiantSkills() {
     const resp = await fetch('data/br_radiant_paths.json');
     const raw = await resp.json();
@@ -163,6 +169,54 @@ const CosData = (() => {
     RADIANT_CLASSES = clsSet;
     RADIANT_SUBCLASSES = subMap;
     return RADIANT_SKILLS;
+  }
+
+  async function loadAdditionalSkills() {
+    const resp = await fetch('data/br_adittionais_trees.json');
+    const raw = await resp.json();
+    ADDITIONAL_SKILLS = raw.map(s => ({ ...s, id: s.id + ADDITIONAL_ID_OFFSET }));
+
+    const clsSet = [];
+    const subMap = {};
+    for (const s of ADDITIONAL_SKILLS) {
+      if (!clsSet.includes(s.cls)) {
+        clsSet.push(s.cls);
+        subMap[s.cls] = [];
+      }
+      if (s.sub !== '-' && !subMap[s.cls].includes(s.sub)) {
+        subMap[s.cls].push(s.sub);
+      }
+    }
+    ADDITIONAL_CLASSES = clsSet;
+    ADDITIONAL_SUBCLASSES = subMap;
+    return ADDITIONAL_SKILLS;
+  }
+
+  function getAdditionalSkillsByClass(cls) {
+    return ADDITIONAL_SKILLS.filter(s => s.cls === cls);
+  }
+
+  function getRootAdditionalSkill(cls) {
+    return ADDITIONAL_SKILLS.find(s => s.cls === cls && s.rank === 0);
+  }
+
+  function findAdditionalSkillByName(name, cls) {
+    return ADDITIONAL_SKILLS.find(s => s.cls === cls && s.name === name);
+  }
+
+  function buildAdditionalGraph(cls) {
+    const skills = getAdditionalSkillsByClass(cls);
+    const children = {};
+    for (const s of skills) children[s.name] = children[s.name] || [];
+    for (const s of skills) {
+      for (const depName of s.deps) {
+        const parent = findAdditionalSkillByName(depName, cls);
+        if (parent) {
+          if (!children[parent.name].includes(s)) children[parent.name].push(s);
+        }
+      }
+    }
+    return { skills, children };
   }
 
   function getRadiantSkillsByClass(cls) {
@@ -262,14 +316,20 @@ const CosData = (() => {
   return {
     ATTRIBUTES, PERICIAS, PERICIAS_RADIANTES, RADIANT_CLASS_PERICIAS, EN_TO_PERICIA, DEFENSES,
     LEVEL_TABLE, CLASSES, SUBCLASSES,
-    get RADIANT_CLASSES()    { return RADIANT_CLASSES; },
-    get RADIANT_SUBCLASSES() { return RADIANT_SUBCLASSES; },
-    get SKILLS()         { return SKILLS; },
-    get RADIANT_SKILLS() { return RADIANT_SKILLS; },
-    loadSkills, loadRadiantSkills,
+    get RADIANT_CLASSES()       { return RADIANT_CLASSES; },
+    get RADIANT_SUBCLASSES()    { return RADIANT_SUBCLASSES; },
+    get SKILLS()                { return SKILLS; },
+    get RADIANT_SKILLS()        { return RADIANT_SKILLS; },
+    get ADDITIONAL_SKILLS()     { return ADDITIONAL_SKILLS; },
+    get ADDITIONAL_CLASSES()    { return ADDITIONAL_CLASSES; },
+    get ADDITIONAL_SUBCLASSES() { return ADDITIONAL_SUBCLASSES; },
+    ADDITIONAL_ID_OFFSET,
+    loadSkills, loadRadiantSkills, loadAdditionalSkills,
     getSkillsByClass, getSkillById, findSkillByName,
     getRadiantSkillsByClass, getRootRadiantSkill,
     findRadiantSkillByName, buildRadiantGraph,
+    getAdditionalSkillsByClass, getRootAdditionalSkill,
+    findAdditionalSkillByName, buildAdditionalGraph,
     getSubclassSkills, getRootSkill, buildGraph,
     computePointsAtLevel, statToPericia
   };

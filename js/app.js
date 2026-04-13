@@ -99,16 +99,17 @@ const App = (() => {
       level: 1,
       radiantClass: null,
       radiantClassLocked: false,
+      ancestryClass: null,  // classe onde o humano gastou o 1º bônus ancestral
     },
     attributes: {
       forca: 0, velocidade: 0, intelecto: 0,
       vontade: 0, consciencia: 0, presenca: 0
     },
-    attrHistory: {},
     pericias: {},
     radiantPericias: {},
     unlockedSkills: new Set(),
     freeUnlockedSkills: new Set(), // IDs auto-desbloqueados por habilidades compartilhadas
+    singerFreeIds: new Set(),       // IDs concedidos gratuitamente pela ancestralidade Cantor
     spentTalents: 0,
     activeClass: '_all',
   };
@@ -155,10 +156,12 @@ const App = (() => {
 
   function getTalentPointsRemaining() {
     let bonus = 0;
-    // Humanos ganham +1 ponto de talento no nível 1
+    // Humanos: +1 bônus ancestral; o talento regular (nível 1) e o bônus são ambos restritos
+    // (1º = Rank 0 de classe mundana, 2º = mesma classe)
     if (state.profile.race === 'human' && state.profile.level >= 1) {
       bonus = 1;
     }
+    // Cantores: sem bônus (Mudar Forma é grátis via singerFreeIds, não conta em spentTalents)
     return getPointsAvailable().totalTalents + bonus - state.spentTalents;
   }
 
@@ -194,24 +197,20 @@ const App = (() => {
     let maxHealth = 0;
     for (let i = 0; i < CosData.LEVEL_TABLE.length; i++) {
       const row = CosData.LEVEL_TABLE[i];
-      const lvl = row.level;
-      if (lvl > p.level) break;
+      if (row.level > p.level) break;
       
-      // Usa a força antiga para níveis passados, e a força atual para o nível ativo
-      let forcaAtThisLevel = a.forca;
-      if (lvl < p.level && state.attrHistory[lvl]) {
-         forcaAtThisLevel = state.attrHistory[lvl].forca;
-      }
-
       if (typeof row.hpGain === 'string' && row.hpGain.includes('+FOR')) {
-        maxHealth += parseInt(row.hpGain.split('+')[0]) + forcaAtThisLevel;
+        maxHealth += parseInt(row.hpGain.split('+')[0]) + a.forca;
       } else {
         maxHealth += Number(row.hpGain) || 0;
       }
     }
 
     const maxFocus = 2 + a.vontade;
-    const maxInvestiture = p.radiantClass ? 2 + a.consciencia : 0;
+    
+    const maxInvestiture = p.radiantClass
+      ? 2 + (a.consciencia >= a.presenca ? a.consciencia : a.presenca)
+      : 0;
 
     return {
       maxHealth, maxFocus, maxInvestiture,
@@ -248,11 +247,87 @@ const App = (() => {
     return CosData.SKILLS.filter(s => s.name === skillName).map(s => s.id);
   }
 
+  // ---- ADDITIONAL SKILL UNLOCK CHECK ----
+  function canUnlockAdditionalSkill(skill) {
+    if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Já desbloqueado' };
+
+    if (skill.cls === 'Cantor' && state.singerFreeIds.has(skill.id)) {
+      return { can: false, reason: 'Concedido automaticamente pela ancestralidade Cantor' };
+    }
+    if (skill.cls === 'Cantor' && state.profile.race !== 'singer') {
+      return { can: false, reason: 'Requer ancestralidade Cantor' };
+    }
+
+    if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+
+    if (skill.rank === 0) return { can: true, reason: '' };
+
+    if (skill.deps.length > 0) {
+      const anyDepMet = skill.deps.some(depName => {
+        const dep = CosData.findAdditionalSkillByName(depName, skill.cls);
+        return dep && state.unlockedSkills.has(dep.id);
+      });
+      if (!anyDepMet) return { can: false, reason: 'Pré-requisito não atendido' };
+    }
+
+    const root = CosData.getRootAdditionalSkill(skill.cls);
+    if (root && !state.unlockedSkills.has(root.id)) {
+      return { can: false, reason: `Requer: ${root.name}` };
+    }
+
+    if (skill.reqStat && skill.reqVal > 0) {
+      const periciaKey = CosData.statToPericia(skill.reqStat);
+      if (periciaKey) {
+        const currentVal = state.pericias[periciaKey] || 0;
+        if (currentVal < skill.reqVal) {
+          return { can: false, reason: `Requer ${CosData.PERICIAS[periciaKey].name} +${skill.reqVal} (atual: ${currentVal})` };
+        }
+      }
+    }
+
+    return { can: true, reason: '' };
+  }
+
+  // ---- SINGER / ADDITIONAL HELPERS ----
+  function isAdditionalSkill(skill) {
+    return CosData.ADDITIONAL_CLASSES.includes(skill.cls);
+  }
+
+  function applySingerFreeSkills() {
+    const mudaForma = CosData.ADDITIONAL_SKILLS.find(s => s.cls === 'Cantor' && s.name === 'Mudar Forma');
+    if (mudaForma && !state.unlockedSkills.has(mudaForma.id)) {
+      state.unlockedSkills.add(mudaForma.id);
+      state.singerFreeIds.add(mudaForma.id);
+    }
+  }
+
+  function removeSingerFreeSkills() {
+    for (const id of state.singerFreeIds) {
+      state.unlockedSkills.delete(id);
+    }
+    state.singerFreeIds.clear();
+  }
+
   // ---- SKILL PREREQUISITES CHECK ----
   function canUnlockSkill(skill) {
     if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Ja desbloqueado' };
 
     if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+
+    // Human ancestry restriction — ambos os talentos do nível 1 são restritos
+    if (state.profile.race === 'human') {
+      if (state.spentTalents === 0) {
+        // 1º talento: deve ser Rank 0 de uma classe mundana
+        if (skill.rank !== 0 || !CosData.CLASSES.includes(skill.cls)) {
+          return { can: false, reason: 'Ancestral Humano: escolha um Rank 0 de classe mundana' };
+        }
+      } else if (state.spentTalents === 1) {
+        // 2º talento: deve ser na mesma classe do 1º
+        if (state.profile.ancestryClass && skill.cls !== state.profile.ancestryClass) {
+          return { can: false, reason: `Ancestral Humano: deve ser da classe ${state.profile.ancestryClass}` };
+        }
+      }
+    }
 
     // Rank 0 (class root): only requires talent points, no other prereqs
     if (skill.rank === 0) return { can: true, reason: '' };
@@ -296,6 +371,24 @@ const App = (() => {
   function canRemoveSkill(skill) {
     if (!state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Nao esta desbloqueado' };
 
+    // Habilidades concedidas gratuitamente pela ancestralidade Cantor não podem ser removidas
+    if (state.singerFreeIds.has(skill.id)) {
+      return { can: false, reason: 'Concedido pela ancestralidade Cantor — não pode ser removido' };
+    }
+
+    // Árvore adicional (Cantor etc.)
+    if (isAdditionalSkill(skill)) {
+      const pool = CosData.ADDITIONAL_SKILLS;
+      if (skill.rank === 0) {
+        const hasChildren = pool.some(s => s.cls === skill.cls && s.rank > 0 && state.unlockedSkills.has(s.id));
+        if (hasChildren) return { can: false, reason: 'Outros talentos desta classe estão desbloqueados' };
+        return { can: true, reason: '' };
+      }
+      const children = pool.filter(s => s.cls === skill.cls && s.deps.includes(skill.name) && state.unlockedSkills.has(s.id));
+      if (children.length > 0) return { can: false, reason: 'Outros talentos dependem deste' };
+      return { can: true, reason: '' };
+    }
+
     const pool = isRadiantSkill(skill) ? CosData.RADIANT_SKILLS : CosData.SKILLS;
 
     if (skill.rank === 0) {
@@ -327,13 +420,15 @@ const App = (() => {
 
   function toggleSkill(skill) {
     const radiant = isRadiantSkill(skill);
+    const additional = isAdditionalSkill(skill);
+
     if (state.unlockedSkills.has(skill.id)) {
+      // --- REMOVE ---
       const check = canRemoveSkill(skill);
       if (!check.can) { notify(check.reason); return false; }
       state.unlockedSkills.delete(skill.id);
       state.freeUnlockedSkills.delete(skill.id);
-      // Remove todas as cópias compartilhadas (habilidades com mesmo nome em outras classes)
-      if (!radiant) {
+      if (!radiant && !additional) {
         for (const sid of getSharedSkillIds(skill.name)) {
           if (sid !== skill.id) {
             state.unlockedSkills.delete(sid);
@@ -342,14 +437,37 @@ const App = (() => {
         }
       }
       state.spentTalents--;
+
+      // Se humano e o 1º talento foi removido, limpa ancestryClass
+      if (state.profile.race === 'human' && !radiant && !additional) {
+        if (state.spentTalents === 0) {
+          state.profile.ancestryClass = null;
+        }
+      }
       return true;
+
     } else {
-      const check = radiant ? canUnlockRadiantSkill(skill) : canUnlockSkill(skill);
+      // --- UNLOCK ---
+      const check = radiant ? canUnlockRadiantSkill(skill)
+                  : additional ? canUnlockAdditionalSkill(skill)
+                  : canUnlockSkill(skill);
       if (!check.can) { notify(check.reason); return false; }
       state.unlockedSkills.add(skill.id);
       state.spentTalents++;
-      // Auto-desbloqueia habilidades com mesmo nome em outras classes (sem custo extra)
-      if (!radiant) {
+
+      // Sela a ordem radiante automaticamente no primeiro talento radiante comprado
+      if (radiant && !state.profile.radiantClassLocked) {
+        state.profile.radiantClassLocked = true;
+      }
+
+      // Registra ancestryClass para humano no 1º talento gasto
+      if (state.profile.race === 'human' && !radiant && !additional) {
+        if (state.spentTalents === 1) {
+          state.profile.ancestryClass = skill.cls;
+        }
+      }
+
+      if (!radiant && !additional) {
         for (const sid of getSharedSkillIds(skill.name)) {
           if (sid !== skill.id && !state.unlockedSkills.has(sid)) {
             state.unlockedSkills.add(sid);
@@ -519,11 +637,16 @@ const App = (() => {
     renderPericias();
     renderLevelDisplay();
     renderRadiantSection();
-    // Lock race buttons when not level 1
-    const locked = state.profile.level !== 1;
-    document.querySelectorAll('.race-btn').forEach(btn => {
-      btn.classList.toggle('locked', locked);
-    });
+    // Update race display label in sidebar
+    const raceLabel = document.getElementById('char-race-display');
+    if (raceLabel) {
+      raceLabel.textContent = state.profile.race === 'singer' ? 'Cantor' : 'Humano';
+    }
+    // Update name display
+    const nameInput = document.getElementById('char-name');
+    if (nameInput && nameInput.value !== state.profile.name) {
+      nameInput.value = state.profile.name;
+    }
   }
 
   // ---- VIEWPORT GLYPH WATERMARK ----
@@ -677,10 +800,6 @@ const App = (() => {
   }
 
   async function showRadiantWheel() {
-    if (state.profile.radiantClassLocked) {
-      notify('Ordem Selada. Use Reset para alterar.');
-      return;
-    }
     if (state.profile.level < 2) {
       notify('Disponível a partir do Nível 2');
       return;
@@ -740,48 +859,18 @@ const App = (() => {
     }
 
     const cls = state.profile.radiantClass;
+    // A ordem fica bloqueada assim que o primeiro talento radiante é comprado
     const locked = state.profile.radiantClassLocked;
 
     if (!cls) {
-      // No order chosen yet — show wheel open button
+      // Nenhuma ordem escolhida — mostra botão para abrir a roda
       const btn = document.createElement('button');
       btn.className = 'radiant-choose-btn';
       btn.textContent = '✦  Escolher Ordem Radiante';
       btn.addEventListener('click', showRadiantWheel);
       container.appendChild(btn);
-    } else if (!locked) {
-      // Chosen but not sealed — show display + alter + seal buttons
-      const color = clsColor(cls);
-      const div = document.createElement('div');
-      div.className = 'radiant-locked-display';
-      div.style.borderColor = color + '60';
-      div.innerHTML = `
-        <img class="radiant-locked-glyph" src="${WHEEL_SVG_MAP[cls]}" alt="${cls}">
-        <div class="radiant-locked-info">
-          <div class="radiant-locked-name" style="color:${color}">${cls}</div>
-          <div style="display:flex;gap:6px;margin-top:5px;">
-            <button class="btn" style="font-size:10px;padding:3px 8px;flex:none;" id="radiant-alter-btn">Alterar</button>
-            <button class="btn primary" style="font-size:10px;padding:3px 8px;flex:none;" id="radiant-seal-btn">Selar Ordem</button>
-          </div>
-        </div>
-      `;
-      container.appendChild(div);
-      div.querySelector('#radiant-alter-btn').addEventListener('click', showRadiantWheel);
-      // div.querySelector('#radiant-seal-btn').addEventListener('click', () => {
-      //   state.profile.radiantClassLocked = true;
-      //   renderRadiantSection();
-      //   notify('Ordem selada! Apenas um Reset pode desfazer.');
-      // });
-      div.querySelector('#radiant-seal-btn').addEventListener('click', () => {
-        state.profile.radiantClassLocked = true;
-        // Opcional: Aqui você pode deduzir o ponto de talento se quiser automatizar
-        // state.spentTalents++; 
-        renderSidebar(); // Garante que os surtos apareçam na lista agora que está selado
-        notify('Ordem selada! Perícias de Fluxo desbloqueadas.');
-      });
-      
     } else {
-      // Sealed — show lock badge, no change allowed
+      // Ordem escolhida — mostra display; botão "Alterar" só aparece antes de comprar talentos
       const color = clsColor(cls);
       const div = document.createElement('div');
       div.className = 'radiant-locked-display';
@@ -790,10 +879,15 @@ const App = (() => {
         <img class="radiant-locked-glyph" src="${WHEEL_SVG_MAP[cls]}" alt="${cls}">
         <div class="radiant-locked-info">
           <div class="radiant-locked-name" style="color:${color}">${cls}</div>
-          <div class="radiant-sealed-badge">🔒 Ordem Selada</div>
+          ${!locked ? `<div style="margin-top:5px;">
+            <button class="btn" style="font-size:10px;padding:3px 8px;" id="radiant-alter-btn">Alterar</button>
+          </div>` : ''}
         </div>
       `;
       container.appendChild(div);
+      if (!locked) {
+        div.querySelector('#radiant-alter-btn').addEventListener('click', showRadiantWheel);
+      }
     }
 
     renderRadiantPericias();
@@ -1308,6 +1402,27 @@ const App = (() => {
       });
       container.appendChild(rbtn);
     }
+
+    // Cantor tab (apenas para jogadores com ancestralidade Cantor)
+    if (state.profile.race === 'singer') {
+      const csep = document.createElement('span');
+      csep.className = 'tab-separator';
+      container.appendChild(csep);
+
+      const cColor = clsColor('Cantor');
+      const cbtn = document.createElement('button');
+      cbtn.className = 'class-tab tab-additional' + ('Cantor' === state.activeClass ? ' active' : '');
+      cbtn.textContent = 'Cantor';
+      cbtn.style.borderBottomColor = 'Cantor' === state.activeClass ? cColor : 'transparent';
+      cbtn.style.color = 'Cantor' === state.activeClass ? cColor : '';
+      cbtn.addEventListener('click', () => {
+        if (state.activeClass === 'Cantor') return;
+        state.activeClass = 'Cantor';
+        renderClassTabs();
+        triggerTabSlide(() => rebuildTree());
+      });
+      container.appendChild(cbtn);
+    }
   }
 
   // ---- TOOLTIP (hover only) ----
@@ -1517,6 +1632,7 @@ const App = (() => {
 
   function canUnlockCheck(skill) {
     if (isRadiantSkill(skill)) return canUnlockRadiantSkill(skill).can;
+    if (isAdditionalSkill(skill)) return canUnlockAdditionalSkill(skill).can;
     return canUnlockSkill(skill).can;
   }
 
@@ -1526,7 +1642,8 @@ const App = (() => {
         SkillRenderer.updateStates(state.unlockedSkills, state.pericias, canUnlockCheck);
         return;
       }
-      SkillRenderer.buildAllTrees(state.unlockedSkills, state.pericias, canUnlockCheck, state.profile.radiantClass);
+      const addlCls = state.profile.race === 'singer' ? ['Cantor'] : [];
+      SkillRenderer.buildAllTrees(state.unlockedSkills, state.pericias, canUnlockCheck, state.profile.radiantClass, addlCls);
     } else {
       SkillRenderer.buildTree(state.activeClass, state.unlockedSkills, state.pericias, !!keepView, canUnlockCheck);
     }
@@ -1537,11 +1654,11 @@ const App = (() => {
     const data = {
       profile: state.profile,
       attributes: state.attributes,
-      attrHistory: state.attrHistory,
       pericias: state.pericias,
       radiantPericias: state.radiantPericias,
       unlockedSkills: [...state.unlockedSkills],
       freeUnlockedSkills: [...state.freeUnlockedSkills],
+      singerFreeIds: [...state.singerFreeIds],
       spentTalents: state.spentTalents,
       activeClass: state.activeClass,
     };
@@ -1554,20 +1671,16 @@ const App = (() => {
     if (!raw) { notify('Nenhum perfil salvo encontrado'); return; }
     try {
       const data = JSON.parse(raw);
-      state.profile = { ...state.profile, radiantClassLocked: false, ...data.profile };
+      state.profile = { ...state.profile, radiantClassLocked: false, ancestryClass: null, ...data.profile };
       state.attributes = { ...state.attributes, ...data.attributes };
-      state.attrHistory = data.attrHistory || {};
       state.pericias = { ...state.pericias, ...data.pericias };
       state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
       state.unlockedSkills = new Set(data.unlockedSkills || []);
       state.freeUnlockedSkills = new Set(data.freeUnlockedSkills || []);
+      state.singerFreeIds = new Set(data.singerFreeIds || []);
       state.spentTalents = data.spentTalents || 0;
-      state.activeClass = data.activeClass || 'Agente';
+      state.activeClass = data.activeClass || '_all';
 
-      document.getElementById('char-name').value = state.profile.name;
-      document.querySelectorAll('.race-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.race === state.profile.race);
-      });
       renderSidebar();
       renderClassTabs();
       rebuildTree();
@@ -1578,22 +1691,19 @@ const App = (() => {
   }
 
   function resetProfile() {
-    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false };
+    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false, ancestryClass: null };
     state.attributes = { forca:0, velocidade:0, intelecto:0, vontade:0, consciencia:0, presenca:0 };
-    state.attrHistory = {};
     initPericias();
     state.unlockedSkills = new Set();
     state.freeUnlockedSkills = new Set();
+    state.singerFreeIds = new Set();
     state.spentTalents = 0;
-
-    document.getElementById('char-name').value = '';
-    document.querySelectorAll('.race-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.race === 'human');
-    });
+    state.activeClass = '_all';
 
     renderSidebar();
+    renderClassTabs();
     rebuildTree();
-    notify('Perfil resetado');
+    showProfileModal(false);
   }
 
   // ---- EXPORT / IMPORT (JSON FILE) ----
@@ -1654,10 +1764,144 @@ const App = (() => {
     input.click();
   }
 
+  // ---- PROFILE MODAL ----
+  let _profileDraft = null;
+
+  function showProfileModal(canCancel) {
+    const modal = document.getElementById('profile-modal');
+    if (!modal) return;
+
+    // Snapshot current state into draft
+    _profileDraft = {
+      name: state.profile.name || '',
+      race: state.profile.race || 'human',
+    };
+
+    const isNew = !canCancel;
+
+    modal.innerHTML = `
+      <div class="pm-backdrop"></div>
+      <div class="pm-content">
+        <div class="pm-header">
+          <span class="pm-title">${isNew ? 'Criar Personagem' : 'Editar Perfil'}</span>
+          ${canCancel ? '<button class="pm-close" id="pm-close-btn">&times;</button>' : ''}
+        </div>
+        <div class="pm-body">
+
+          <div class="pm-section">
+            <div class="pm-section-title">Nome do Personagem</div>
+            <input class="pm-name-input" id="pm-name-input" type="text"
+              placeholder="Digite o nome..." value="${_profileDraft.name}" maxlength="40" autocomplete="off">
+          </div>
+
+          ${isNew ? `
+          <div class="pm-section">
+            <div class="pm-section-title">Ancestralidade</div>
+            <div class="pm-race-cards">
+
+              <div class="pm-race-card ${_profileDraft.race === 'human' ? 'active' : ''}" data-race="human">
+                <div class="pm-race-img">
+                  <span class="pm-race-img-placeholder">&#9654;</span>
+                </div>
+                <div class="pm-race-name">Humano</div>
+                <div class="pm-race-desc">
+                  O 1º talento deve ser o Rank&nbsp;0 de uma classe mundana; o 2º fica restrito à mesma classe.
+                </div>
+              </div>
+
+              <div class="pm-race-card ${_profileDraft.race === 'singer' ? 'active' : ''}" data-race="singer">
+                <div class="pm-race-img">
+                  <span class="pm-race-img-placeholder">&#9670;</span>
+                </div>
+                <div class="pm-race-name">Cantor</div>
+                <div class="pm-race-desc">
+                  <em>Mudar Forma</em> desbloqueado gratuitamente + 1 talento livre para gastar em qualquer árvore.
+                </div>
+              </div>
+
+            </div>
+          </div>` : ''}
+
+        </div>
+        <div class="pm-footer">
+          ${canCancel ? '<button class="btn pm-cancel-btn" id="pm-cancel-btn">Cancelar</button>' : ''}
+          <button class="btn primary pm-confirm-btn" id="pm-confirm-btn">
+            ${isNew ? 'Criar Personagem' : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    `;
+
+    modal.classList.add('visible');
+
+    // Focus name input
+    const nameEl = document.getElementById('pm-name-input');
+    if (nameEl) {
+      nameEl.focus();
+      nameEl.select();
+      nameEl.addEventListener('input', e => { _profileDraft.name = e.target.value; });
+    }
+
+    // Race card clicks (apenas na criação — na edição não há cards)
+    if (isNew) {
+      modal.querySelectorAll('.pm-race-card').forEach(card => {
+        card.addEventListener('click', () => {
+          _profileDraft.race = card.dataset.race;
+          modal.querySelectorAll('.pm-race-card').forEach(c => c.classList.toggle('active', c === card));
+        });
+      });
+    }
+
+    // Confirm
+    document.getElementById('pm-confirm-btn')?.addEventListener('click', () => {
+      if (!_profileDraft.name.trim()) {
+        const inp = document.getElementById('pm-name-input');
+        if (inp) { inp.focus(); inp.style.borderColor = 'var(--accent-red)'; }
+        notify('Digite um nome para o personagem');
+        return;
+      }
+      applyProfile(_profileDraft);
+      hideProfileModal();
+    });
+
+    // Cancel / close
+    document.getElementById('pm-close-btn')?.addEventListener('click', hideProfileModal);
+    document.getElementById('pm-cancel-btn')?.addEventListener('click', hideProfileModal);
+    modal.querySelector('.pm-backdrop')?.addEventListener('click', () => {
+      if (canCancel) hideProfileModal();
+    });
+  }
+
+  function hideProfileModal() {
+    const modal = document.getElementById('profile-modal');
+    if (modal) modal.classList.remove('visible');
+    _profileDraft = null;
+  }
+
+  function applyProfile(draft) {
+    const prevRace = state.profile.race;
+    state.profile.name = draft.name.trim();
+    state.profile.race = draft.race;
+
+    // Handle race change effects
+    if (draft.race !== prevRace) {
+      if (draft.race === 'singer') {
+        applySingerFreeSkills();
+      } else {
+        removeSingerFreeSkills();
+      }
+    }
+
+    renderSidebar();
+    renderClassTabs();
+    rebuildTree();
+  }
+
   // ---- INIT (async - waits for skills JSON) ----
   async function init() {
     await CosData.loadSkills();
     await CosData.loadRadiantSkills();
+    await CosData.loadAdditionalSkills();
     preloadWheelSvgs(); // fire-and-forget — wheel opens instantly later
 
     initPericias();
@@ -1690,12 +1934,15 @@ const App = (() => {
 
     rebuildTree();
 
-    // Hide loading
+    // Hide loading, then show profile modal if no name yet
     setTimeout(() => {
       const loading = document.getElementById('loading');
       if (loading) {
         loading.classList.add('fade-out');
-        setTimeout(() => loading.remove(), 600);
+        setTimeout(() => {
+          loading.remove();
+          if (!state.profile.name) showProfileModal(false);
+        }, 600);
       }
     }, 800);
   }
@@ -1706,17 +1953,8 @@ const App = (() => {
       nameInput.addEventListener('input', e => { state.profile.name = e.target.value; });
     }
 
-    document.querySelectorAll('.race-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (state.profile.level !== 1) {
-          notify('Ancestralidade so pode ser alterada no nivel 1');
-          return;
-        }
-        state.profile.race = btn.dataset.race;
-        document.querySelectorAll('.race-btn').forEach(b => b.classList.toggle('active', b === btn));
-        renderSidebar();
-        rebuildTree(true);
-      });
+    document.getElementById('btn-edit-profile')?.addEventListener('click', () => {
+      showProfileModal(true);
     });
 
     function toggleSidebar() {
@@ -1729,35 +1967,16 @@ const App = (() => {
     document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
     document.getElementById('sidebar-reopen')?.addEventListener('click', toggleSidebar);
 
-    // document.getElementById('lvl-up')?.addEventListener('click', () => {
-    //   if (state.profile.level < 30) {
-    //     state.profile.level++;
-    //     renderSidebar();
-    //     rebuildTree(true);
-    //   }
-    // });
-    // document.getElementById('lvl-down')?.addEventListener('click', () => {
-    //   if (state.profile.level > 1) {
-    //     state.profile.level--;
-    //     renderSidebar();
-    //     rebuildTree(true);
-    //   }
-    // });
     document.getElementById('lvl-up')?.addEventListener('click', () => {
-      // Bloqueia qualquer up se houver pontos pendentes
+      // Bloqueia o up se houver pontos pendentes (Mantivemos a sua regra de segurança!)
       if (getAttrPointsRemaining() > 0) {
         notify('Gaste todos os seus pontos de atributo disponíveis antes de subir de nível!');
         return;
       }
-      
-      // Opcional, mas trava o jogador de esquecer as perícias também
       if (getPericiaPointsRemaining() > 0) {
         notify('Gaste todos os seus pontos de perícia disponíveis antes de subir de nível!');
         return;
       }
-
-      // 📸 Salva a fotografia dos atributos exatos neste nível
-      state.attrHistory[state.profile.level] = { ...state.attributes };
 
       if (state.profile.level < 30) {
         state.profile.level++;
@@ -1768,12 +1987,15 @@ const App = (() => {
 
     document.getElementById('lvl-down')?.addEventListener('click', () => {
       if (state.profile.level > 1) {
-        const prevLevel = state.profile.level - 1;
-        state.profile.level = prevLevel;
+        state.profile.level--;
         
-        // ⏪ Restaura os atributos exatos do nível anterior (devolve os pontos)
-        if (state.attrHistory[prevLevel]) {
-          state.attributes = { ...state.attrHistory[prevLevel] };
+        // Se voltou para o Nível 1, reduz atributos que passaram do limite de 3
+        if (state.profile.level === 1) {
+          for (const key in state.attributes) {
+            if (state.attributes[key] > 3) {
+              state.attributes[key] = 3;
+            }
+          }
         }
         
         renderSidebar();

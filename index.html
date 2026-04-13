@@ -20,6 +20,9 @@
   <!-- Skill Detail Modal -->
   <div id="skill-modal"></div>
 
+  <!-- Profile Creation Modal -->
+  <div id="profile-modal"></div>
+
   <!-- Radiant Wheel Overlay -->
   <div id="radiant-wheel">
     <button class="radiant-wheel-close" id="radiant-wheel-close">&times;</button>
@@ -70,12 +73,10 @@
           <label>Nome</label>
           <input type="text" id="char-name" placeholder="Nome do personagem">
         </div>
-        <div class="profile-row">
+        <div class="profile-row profile-row-race">
           <label>Ancestralidade</label>
-        </div>
-        <div class="race-select">
-          <button class="race-btn active" data-race="human">Humano</button>
-          <button class="race-btn" data-race="singer">Cantor</button>
+          <span id="char-race-display" class="race-display">Humano</span>
+          <button class="btn race-edit-btn" id="btn-edit-profile" title="Editar perfil">&#9998;</button>
         </div>
       </div>
 

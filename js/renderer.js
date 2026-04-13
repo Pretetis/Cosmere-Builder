@@ -46,6 +46,8 @@ const SkillRenderer = (() => {
     'Alternauta':                0xe2e8f0,  // prata
     'Plasmador':                 0xc084fc,  // roxo
     'Guardião das Pedras':       0xa87d4e,  // terracota
+    // Ancestralidade
+    'Cantor':                    0xe07b54,  // terracota-laranja
   };
 
   const COLOR_LOCKED    = 0x3a3845;
@@ -329,7 +331,7 @@ const SkillRenderer = (() => {
   // maxLocalRadius: if set, clamps nodes to this distance from origin (used in all-view)
   function computeLayout(cls, skills, childrenMap, root, baseAngle, maxLocalRadius) {
     const positions = {};
-    const subs = CosData.SUBCLASSES[cls] || CosData.RADIANT_SUBCLASSES[cls] || [];
+    const subs = CosData.SUBCLASSES[cls] || CosData.RADIANT_SUBCLASSES[cls] || CosData.ADDITIONAL_SUBCLASSES[cls] || [];
     const rng = seededRng(classToSeed(cls));
     const subCount = subs.length;
 
@@ -889,7 +891,7 @@ const SkillRenderer = (() => {
   // ---- BUILD ALL CLASSES (panoramic view) ----
   let _viewMode = 'single'; // 'single' or 'all'
 
-  function buildAllTrees(unlockedSkills, periciaValues, canUnlockFn, radiantClass) {
+  function buildAllTrees(unlockedSkills, periciaValues, canUnlockFn, radiantClass, additionalClasses) {
     _viewMode = 'all';
     _canUnlockFn = canUnlockFn || null;
     currentClass = null;
@@ -933,10 +935,13 @@ const SkillRenderer = (() => {
       createClassLabel(cls, cx, cy);
     }
 
-    // Build full entry list: radiant first (top), then 6 base classes clockwise
+    // Build full entry list: radiant first (top), then 6 base classes, then additional (Cantor etc.)
     const allEntries = [];
     if (radiantClass) allEntries.push({ cls: radiantClass, isRadiant: true });
     CosData.CLASSES.forEach(cls => allEntries.push({ cls, isRadiant: false }));
+    if (additionalClasses && additionalClasses.length) {
+      additionalClasses.forEach(cls => allEntries.push({ cls, isRadiant: false, isAdditional: true }));
+    }
 
     const total  = allEntries.length; // 6 without radiant, 7 with
     const radius = 8;
@@ -1002,6 +1007,10 @@ const SkillRenderer = (() => {
         const { skills, children } = CosData.buildRadiantGraph(rp.cls);
         const root = CosData.getRootRadiantSkill(rp.cls);
         if (root) placeTree(rp.cls, skills, children, root, rp.x, rp.y, rp.angle, true);
+      } else if (rp.isAdditional) {
+        const { skills, children } = CosData.buildAdditionalGraph(rp.cls);
+        const root = CosData.getRootAdditionalSkill(rp.cls);
+        if (root) placeTree(rp.cls, skills, children, root, rp.x, rp.y, rp.angle, false);
       } else {
         const { skills, children } = CosData.buildGraph(rp.cls);
         const root = CosData.getRootSkill(rp.cls);
@@ -1066,6 +1075,43 @@ const SkillRenderer = (() => {
 
   function buildSingleTree(cls, unlockedSkills, periciaValues, keepView, canUnlockFn) {
     _viewMode = 'single';
+    // Additional classes (Cantor race tree, etc.)
+    if (CosData.ADDITIONAL_CLASSES.includes(cls)) {
+      _canUnlockFn = canUnlockFn || null;
+      currentClass = cls;
+      const savedPos  = keepView && mainGroup ? { x: mainGroup.position.x, y: mainGroup.position.y } : null;
+      const savedZoom = keepView && camera ? camera.position.z : null;
+      clearTree();
+      const { skills, children } = CosData.buildAdditionalGraph(cls);
+      const root = CosData.getRootAdditionalSkill(cls);
+      if (!root) return;
+      const positions = computeLayout(cls, skills, children, root);
+      for (const skill of skills) {
+        const pos = positions[skill.id];
+        if (!pos) continue;
+        const isUnlocked = unlockedSkills.has(skill.id);
+        const canUnlock  = !isUnlocked && _canUnlockFn ? _canUnlockFn(skill) : false;
+        createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues);
+      }
+      for (const skill of skills) {
+        const posTo = positions[skill.id];
+        if (!posTo) continue;
+        for (const depName of skill.deps) {
+          const parent = CosData.findAdditionalSkillByName(depName, cls);
+          if (parent && positions[parent.id]) {
+            createConnection(positions[parent.id], posTo, skill, parent, unlockedSkills, cls);
+          }
+        }
+      }
+      if (savedPos) {
+        mainGroup.position.x = savedPos.x;
+        mainGroup.position.y = savedPos.y;
+        camera.position.z = savedZoom;
+      } else {
+        centerCamera(positions);
+      }
+      return;
+    }
     // Radiant classes use a different data source
     if (CosData.RADIANT_CLASSES.includes(cls)) {
       _canUnlockFn = canUnlockFn || null;
