@@ -20,6 +20,7 @@
   --accent-red:    #e05555;
   --accent-green:  #4ade80;
   --accent-purple: #a78bfa;
+  --accent-teal:   #2dd4bf;
   --glow-storm:    rgba(74, 158, 255, 0.35);
   --glow-gold:     rgba(212, 168, 83, 0.35);
   --glow-locked:   rgba(90, 88, 100, 0.2);
@@ -1335,18 +1336,44 @@ html, body {
 }
 
 .sphere-btn:hover {
-    border-color: var(--accent-gold);
+    border-color: var(--sphere-color, var(--accent-gold));
+    background: rgba(255,255,255,0.08);
 }
 
 .sphere-btn.active {
-    background: #fff;
-    border-color: #fff;
-    box-shadow: 0 0 8px #fff, 0 0 12px var(--accent-gold);
+    background: var(--sphere-color, #fff);
+    border-color: var(--sphere-color, #fff);
+    box-shadow: 0 0 7px var(--sphere-color, #fff), 0 0 14px color-mix(in srgb, var(--sphere-color, var(--accent-gold)) 50%, transparent);
 }
 
 .sphere-btn.locked {
     cursor: not-allowed;
     opacity: 0.3;
+}
+
+/* ---- PERICIA FILTER ---- */
+.pericia-filter-wrapper {
+  grid-column: 1 / -1;
+  margin-bottom: 4px;
+}
+
+.pericia-filter-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pericia-filter-input:focus {
+  border-color: var(--accent-gold);
+}
+.pericia-filter-input::placeholder {
+  color: var(--text-muted);
 }
 
 /* --- OVERRIDES PARA SIDEBAR MAIOR E TOGGLE --- */
@@ -1697,6 +1724,21 @@ body.sidebar-closed #sidebar-reopen {
   padding: 14px 24px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* Footer em duas linhas: alternativas em cima, ação principal embaixo */
+.pm-footer--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.pm-footer-alts {
+  display: flex;
+  gap: 8px;
+}
+
+.pm-footer-alts .btn {
+  flex: 1;
 }
 
 .pm-confirm-btn { min-width: 140px; }

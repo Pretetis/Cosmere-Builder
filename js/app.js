@@ -1333,25 +1333,52 @@ const App = (() => {
   //     });
   //   });
   // }
+  const ATTR_COLORS = {
+    forca:       'var(--accent-red)',
+    velocidade:  'var(--accent-green)',
+    intelecto:   'var(--accent-storm)',
+    vontade:     'var(--accent-purple)',
+    consciencia: 'var(--accent-gold)',
+    presenca:    'var(--accent-teal)',
+  };
+
+  function applyPericiaFilter(query) {
+    const q = (query || '').toLowerCase().trim();
+    document.querySelectorAll('#pericias-grid .pericia-item').forEach(item => {
+      const name = item.querySelector('.pericia-name')?.textContent.toLowerCase() || '';
+      item.style.display = (!q || name.includes(q)) ? '' : 'none';
+    });
+  }
+
   function renderPericias() {
     const container = document.getElementById('pericias-grid');
     if (!container) return;
+
+    // Preserva o valor do filtro antes de limpar
+    const prevFilter = container.querySelector('.pericia-filter-input');
+    const filterVal = prevFilter ? prevFilter.value : '';
+
     container.innerHTML = '';
 
     const maxRank = getMaxPericiaRank();
     const initialClassKey = state.profile.ancestryClass ? CLASS_INITIAL_PERICIA[state.profile.ancestryClass] : null;
 
-    // Helper para criar as 5 esferas
-    const createSpheres = (currentRank, key, isRadiant = false) => {
-      let spheresHtml = '<div class="sphere-track">';
+    // Filtro de nome
+    const filterWrapper = document.createElement('div');
+    filterWrapper.className = 'pericia-filter-wrapper';
+    filterWrapper.innerHTML = `<input type="text" class="pericia-filter-input" placeholder="Filtrar perícias..." value="${filterVal}" autocomplete="off">`;
+    container.appendChild(filterWrapper);
+
+    // Helper para criar as 5 esferas com cor do atributo
+    const createSpheres = (currentRank, key, isRadiant = false, color = '#fff') => {
+      let spheresHtml = `<div class="sphere-track" style="--sphere-color:${color}">`;
       for (let i = 1; i <= 5; i++) {
         const isActive = i <= currentRank;
         const isLocked = i > maxRank;
-        const isFixed = !isRadiant && (key === initialClassKey) && (i === 1);
         spheresHtml += `
-          <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}" 
-               data-idx="${i}" 
-               data-key="${key}" 
+          <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}"
+               data-idx="${i}"
+               data-key="${key}"
                data-rad="${isRadiant}"
                title="${isLocked ? 'Bloqueado por Nível' : 'Rank ' + i}">
           </div>`;
@@ -1365,15 +1392,16 @@ const App = (() => {
       const rank = state.pericias[key] || 0;
       const attrVal = state.attributes[info.attr] || 0;
       const total = rank + attrVal;
+      const color = ATTR_COLORS[info.attr] || '#fff';
 
       const div = document.createElement('div');
       div.className = 'pericia-item';
       div.innerHTML = `
         <span class="pericia-name">
-          ${info.name} <small style="opacity:0.5">(${CosData.ATTRIBUTES[info.attr].abbr})</small>
+          ${info.name} <small style="opacity:0.5;color:${color}">(${CosData.ATTRIBUTES[info.attr].abbr})</small>
         </span>
         <div class="pericia-controls-new">
-          ${createSpheres(rank, key)}
+          ${createSpheres(rank, key, false, color)}
           <span class="pericia-total-val">${total}</span>
         </div>
       `;
@@ -1395,13 +1423,14 @@ const App = (() => {
         const rank = state.radiantPericias[key] || 0;
         const attrVal = state.attributes[info.attr] || 0;
         const total = rank + attrVal;
+        const color = ATTR_COLORS[info.attr] || clsColor(cls);
 
         const div = document.createElement('div');
         div.className = 'pericia-item';
         div.innerHTML = `
           <span class="pericia-name" style="color:${clsColor(cls)}">${info.name}</span>
           <div class="pericia-controls-new">
-            ${createSpheres(rank, key, true)}
+            ${createSpheres(rank, key, true, color)}
             <span class="pericia-total-val">${total}</span>
           </div>
         `;
@@ -1442,6 +1471,12 @@ const App = (() => {
         renderSidebar();
         rebuildTree(true);
       });
+    });
+
+    // Aplica filtro preservado e conecta listener
+    applyPericiaFilter(filterVal);
+    container.querySelector('.pericia-filter-input')?.addEventListener('input', e => {
+      applyPericiaFilter(e.target.value);
     });
   }
 
@@ -2225,13 +2260,21 @@ const App = (() => {
           </div>` : ''}
 
         </div>
-        <div class="pm-footer">
-          ${canCancel ? '<button class="btn pm-cancel-btn" id="pm-cancel-btn">Cancelar</button>' : ''}
-          <button class="btn pm-import-btn" id="pm-import-btn">Importar PDF</button>
-          <button class="btn primary pm-confirm-btn" id="pm-confirm-btn">
-            ${isNew ? 'Criar Personagem' : 'Confirmar'}
-          </button>
+        ${isNew ? `
+        <div class="pm-footer pm-footer--stacked">
+          <div class="pm-footer-alts">
+            <button class="btn pm-import-btn" id="pm-import-btn">Importar PDF</button>
+            <button class="btn pm-cache-btn" id="pm-cache-btn">Carregar do Cache</button>
+          </div>
+          <button class="btn primary pm-confirm-btn" id="pm-confirm-btn">Criar Personagem</button>
         </div>
+        ` : `
+        <div class="pm-footer">
+          <button class="btn pm-cancel-btn" id="pm-cancel-btn">Cancelar</button>
+          <button class="btn pm-import-btn" id="pm-import-btn">Importar PDF</button>
+          <button class="btn primary pm-confirm-btn" id="pm-confirm-btn">Confirmar</button>
+        </div>
+        `}
       </div>
     `;
 
@@ -2270,6 +2313,12 @@ const App = (() => {
     // Import PDF
     document.getElementById('pm-import-btn')?.addEventListener('click', () => {
       importFromPDF();
+    });
+
+    // Carregar do Cache
+    document.getElementById('pm-cache-btn')?.addEventListener('click', () => {
+      hideProfileModal();
+      showSavesModal();
     });
 
     // Cancel / close
