@@ -1,6 +1,9 @@
 Cosmere RPG - Árvore de Habilidades e Gerador de Fichas
 
 Um aplicativo web interativo desenvolvido para facilitar a criação e o gerenciamento de personagens no sistema Cosmere RPG. A ferramenta oferece uma interface visual rica, incluindo uma visualização em 3D das árvores de habilidades, seleção de Ordens Radiantes e a capacidade de exportar sua ficha de personagem diretamente para PDF.
+
+![Interface da Árvore de Habilidades](./docs/gifs/gif1.gif)
+
 🌟 Funcionalidades
 
     Árvore de Habilidades 3D: Navegue pelas habilidades e caminhos (Heroic Paths) do seu personagem em um ambiente interativo gerado com Three.js.
@@ -25,6 +28,9 @@ Um aplicativo web interativo desenvolvido para facilitar a criação e o gerenci
 
     Servidor Local: Python (http.server).
 
+
+ ![Seleção da Ordem Radiante](./docs/images/radiant_wheel.png)
+    
 🚀 Tutorial de Instalação e Execução
 
 Como o projeto faz uso de módulos Node (para a biblioteca de PDF) e requer um servidor local para carregar os arquivos JSON e os modelos 3D corretamente devido às políticas de CORS dos navegadores, siga os passos abaixo:
@@ -72,7 +78,5 @@ http://localhost:8081
     index.html: A página principal da aplicação.
 
     start.bat: Script de inicialização rápida para Windows.
-
-Autor: Pretetis
 
 Desenvolido por Pretetis.
