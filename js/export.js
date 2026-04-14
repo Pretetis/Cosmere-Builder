@@ -551,33 +551,80 @@ const PdfExport = (() => {
       const talentById = new Map(allTalentPools.map(s => [s.id, s]));
 
       // Separa compras diretas (exclui auto-desbloqueadas compartilhadas e Cantor grátis)
-      const directTalents = [];
-      const seenTalentNames = new Map(); // name → winning skill (classe com mais compras diretas)
+      // const directTalents = [];
+      // const seenTalentNames = new Map(); // name → winning skill (classe com mais compras diretas)
+      // const talentClassCount = {};
+      // for (const id of state.unlockedSkills) {
+      //   if (state.freeUnlockedSkills.has(id) || state.singerFreeIds.has(id)) continue;
+      //   const s = talentById.get(id);
+      //   if (s) {
+      //     talentClassCount[s.cls] = (talentClassCount[s.cls] || 0) + 1;
+      //     directTalents.push(s);
+      //   }
+      // }
+      // // Dedup por nome — mantém a classe com mais compras diretas
+      // const talentGrouped = {};
+      // for (const skill of directTalents) {
+      //   const prev = seenTalentNames.get(skill.name);
+      //   if (prev) {
+      //     if ((talentClassCount[skill.cls] || 0) > (talentClassCount[prev.cls] || 0)) {
+      //       const old = talentGrouped[prev.cls];
+      //       if (old) { const i = old.findIndex(s => s.name === skill.name); if (i >= 0) old.splice(i, 1); if (!old.length) delete talentGrouped[prev.cls]; }
+      //       seenTalentNames.set(skill.name, skill);
+      //       (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
+      //     }
+      //   } else {
+      //     seenTalentNames.set(skill.name, skill);
+      //     (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
+      //   }
+      // }
+      const candidateTalents = [];
       const talentClassCount = {};
       for (const id of state.unlockedSkills) {
-        if (state.freeUnlockedSkills.has(id) || state.singerFreeIds.has(id)) continue;
+        if (state.singerFreeIds.has(id)) continue;
         const s = talentById.get(id);
         if (s) {
-          talentClassCount[s.cls] = (talentClassCount[s.cls] || 0) + 1;
-          directTalents.push(s);
+          candidateTalents.push(s);
+          if (!state.freeUnlockedSkills.has(id)) {
+             talentClassCount[s.cls] = (talentClassCount[s.cls] || 0) + 1;
+          }
         }
       }
-      // Dedup por nome — mantém a classe com mais compras diretas
+
+      const seenTalentNames = new Map();
       const talentGrouped = {};
-      for (const skill of directTalents) {
+      const radiantCls = state.profile.radiantClass;
+      const ancestryCls = state.profile.ancestryClass;
+
+      for (const skill of candidateTalents) {
         const prev = seenTalentNames.get(skill.name);
         if (prev) {
-          if ((talentClassCount[skill.cls] || 0) > (talentClassCount[prev.cls] || 0)) {
-            const old = talentGrouped[prev.cls];
-            if (old) { const i = old.findIndex(s => s.name === skill.name); if (i >= 0) old.splice(i, 1); if (!old.length) delete talentGrouped[prev.cls]; }
-            seenTalentNames.set(skill.name, skill);
-            (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
-          }
+            let replace = false;
+            
+            // Força a prioridade para o Radiante selecionado
+            if (skill.cls === radiantCls && prev.cls !== radiantCls) replace = true;
+            else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) replace = true;
+            else if (prev.cls !== radiantCls && prev.cls !== ancestryCls) {
+              const prevIsFree = state.freeUnlockedSkills.has(prev.id);
+              const skillIsFree = state.freeUnlockedSkills.has(skill.id);
+              if (prevIsFree && !skillIsFree) replace = true;
+              else if (prevIsFree === skillIsFree) {
+                 if ((talentClassCount[skill.cls] || 0) > (talentClassCount[prev.cls] || 0)) replace = true;
+              }
+            }
+
+            if (replace) {
+                const old = talentGrouped[prev.cls];
+                if (old) { const i = old.findIndex(s => s.name === skill.name); if (i >= 0) old.splice(i, 1); if (!old.length) delete talentGrouped[prev.cls]; }
+                seenTalentNames.set(skill.name, skill);
+                (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
+            }
         } else {
           seenTalentNames.set(skill.name, skill);
           (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
         }
       }
+      
       // Ordem das classes: mundanas → radiantes → adicionais
       const allClassOrder = [...(CosData.CLASSES || []), ...(CosData.RADIANT_CLASSES || [])];
       const talentClasses = Object.keys(talentGrouped).sort((a, b) => {

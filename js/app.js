@@ -715,33 +715,98 @@ const App = (() => {
       for (const s of pool) byId.set(s.id, s);
     }
 
-    // Collect "direct" unlocks (user purchased — not auto-unlocked by shared-name or singer logic)
-    const directSkills = [];
+    // // Collect "direct" unlocks (user purchased — not auto-unlocked by shared-name or singer logic)
+    // const directSkills = [];
+    // for (const id of state.unlockedSkills) {
+    //   if (state.freeUnlockedSkills.has(id)) continue;
+    //   if (state.singerFreeIds.has(id)) continue;
+    //   const skill = byId.get(id);
+    //   if (skill) directSkills.push(skill);
+    // }
+
+    // // Count direct purchases per class (to resolve ties when an old save lacks freeUnlockedSkills)
+    // const classDirectCount = {};
+    // for (const sk of directSkills) {
+    //   classDirectCount[sk.cls] = (classDirectCount[sk.cls] || 0) + 1;
+    // }
+
+    // // Deduplicate by name: keep the copy from the class with the most direct purchases.
+    // // This correctly handles old saves / edge cases where freeUnlockedSkills is incomplete.
+    // const seenNames = new Map(); // name → winning skill
+    // const grouped = {};         // cls → [skill]
+
+    // for (const skill of directSkills) {
+    //   const prev = seenNames.get(skill.name);
+    //   if (prev) {
+    //     const prevCount = classDirectCount[prev.cls] || 0;
+    //     const newCount  = classDirectCount[skill.cls] || 0;
+    //     if (newCount > prevCount) {
+    //       // Replace: remove prev entry, add new one
+    //       const oldArr = grouped[prev.cls];
+    //       if (oldArr) {
+    //         const idx = oldArr.findIndex(s => s.name === skill.name);
+    //         if (idx >= 0) oldArr.splice(idx, 1);
+    //         if (oldArr.length === 0) delete grouped[prev.cls];
+    //       }
+    //       seenNames.set(skill.name, skill);
+    //       if (!grouped[skill.cls]) grouped[skill.cls] = [];
+    //       grouped[skill.cls].push(skill);
+    //     }
+    //     // else keep prev winner (do nothing)
+    //   } else {
+    //     seenNames.set(skill.name, skill);
+    //     if (!grouped[skill.cls]) grouped[skill.cls] = [];
+    //     grouped[skill.cls].push(skill);
+    //   }
+    // }
+    // Coleta todos, avaliaremos o empate garantindo que sua classe escolhida vença
+    const candidateSkills = [];
     for (const id of state.unlockedSkills) {
-      if (state.freeUnlockedSkills.has(id)) continue;
       if (state.singerFreeIds.has(id)) continue;
       const skill = byId.get(id);
-      if (skill) directSkills.push(skill);
+      if (skill) candidateSkills.push(skill);
     }
 
-    // Count direct purchases per class (to resolve ties when an old save lacks freeUnlockedSkills)
     const classDirectCount = {};
-    for (const sk of directSkills) {
-      classDirectCount[sk.cls] = (classDirectCount[sk.cls] || 0) + 1;
+    for (const sk of candidateSkills) {
+      if (!state.freeUnlockedSkills.has(sk.id)) {
+        classDirectCount[sk.cls] = (classDirectCount[sk.cls] || 0) + 1;
+      }
     }
 
-    // Deduplicate by name: keep the copy from the class with the most direct purchases.
-    // This correctly handles old saves / edge cases where freeUnlockedSkills is incomplete.
-    const seenNames = new Map(); // name → winning skill
-    const grouped = {};         // cls → [skill]
+    const seenNames = new Map(); 
+    const grouped = {};         
+    const radiantCls = state.profile.radiantClass;
+    const ancestryCls = state.profile.ancestryClass;
 
-    for (const skill of directSkills) {
+    for (const skill of candidateSkills) {
       const prev = seenNames.get(skill.name);
       if (prev) {
-        const prevCount = classDirectCount[prev.cls] || 0;
-        const newCount  = classDirectCount[skill.cls] || 0;
-        if (newCount > prevCount) {
-          // Replace: remove prev entry, add new one
+        let replace = false;
+
+        // Prioridade 1: Pertence à classe radiante selecionada (ex: Pulverizador)
+        if (skill.cls === radiantCls && prev.cls !== radiantCls) {
+          replace = true;
+        }
+        // Prioridade 2: Pertence à classe da trilha inicial
+        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) {
+          replace = true;
+        }
+        // Prioridade 3: Desempate por compra direta padrão / quantidade
+        else if (prev.cls !== radiantCls && prev.cls !== ancestryCls) {
+          const prevIsFree = state.freeUnlockedSkills.has(prev.id);
+          const skillIsFree = state.freeUnlockedSkills.has(skill.id);
+          
+          if (prevIsFree && !skillIsFree) {
+            replace = true;
+          } else if (prevIsFree === skillIsFree) {
+            const prevCount = classDirectCount[prev.cls] || 0;
+            const newCount  = classDirectCount[skill.cls] || 0;
+            if (newCount > prevCount) replace = true;
+          }
+        }
+
+        if (replace) {
           const oldArr = grouped[prev.cls];
           if (oldArr) {
             const idx = oldArr.findIndex(s => s.name === skill.name);
@@ -752,7 +817,6 @@ const App = (() => {
           if (!grouped[skill.cls]) grouped[skill.cls] = [];
           grouped[skill.cls].push(skill);
         }
-        // else keep prev winner (do nothing)
       } else {
         seenNames.set(skill.name, skill);
         if (!grouped[skill.cls]) grouped[skill.cls] = [];
@@ -1893,6 +1957,14 @@ const App = (() => {
           const matches = allSkillsPool.filter(s => s.name === tName);
           if (matches.length === 0) continue;
 
+          matches.sort((a, b) => {
+            if (a.cls === radiantClass && b.cls !== radiantClass) return -1;
+            if (b.cls === radiantClass && a.cls !== radiantClass) return 1;
+            if (a.cls === ancestryClass && b.cls !== ancestryClass) return -1;
+            if (b.cls === ancestryClass && a.cls !== ancestryClass) return 1;
+            return 0;
+          });
+          
           for (const sk of matches) unlockedSkills.add(sk.id);
 
           // Apenas 1 "gasto" por nome único; as cópias extras são auto-desbloqueadas (free)
