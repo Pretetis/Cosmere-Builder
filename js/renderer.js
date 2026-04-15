@@ -1386,10 +1386,8 @@ const SkillRenderer = (() => {
 
   // ---- ANIMATION: ROLETA EM TAMANHO REAL ----
   function transitionToClass(oldClass, newClass, stateData, onComplete) {
-    // 1. Limpa a árvore atual para construir o carrossel
     clearTree();
 
-    // 2. Determina a ordem das classes na roleta
     const allEntries = [];
     if (stateData.radiantClass) allEntries.push({ cls: stateData.radiantClass, isRadiant: true });
     CosData.CLASSES.forEach(cls => allEntries.push({ cls, isRadiant: false }));
@@ -1398,10 +1396,11 @@ const SkillRenderer = (() => {
     }
 
     const total = allEntries.length;
-    // Raio gigante para que as árvores fiquem em TAMANHO REAL sem colidir umas nas outras
     const R = 45; 
 
-    // 3. Constrói todas as árvores no aro da roleta (em tamanho real)
+    let oldCx = 0, oldCy = 0;
+    let newCx = 0, newCy = 0;
+
     allEntries.forEach((entry, idx) => {
       const angle = Math.PI / 2 - (2 * Math.PI * idx / total);
       const cx = Math.cos(angle) * R;
@@ -1418,15 +1417,20 @@ const SkillRenderer = (() => {
 
       if (!root) return;
 
-      // Chama o layout em TAMANHO REAL (sem passar parâmetros de encolhimento)
       const localPos = computeLayout(entry.cls, graph.skills, graph.children, root);
       const treePositions = {};
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 
       graph.skills.forEach(skill => {
         if (!localPos[skill.id]) return;
         const lp = localPos[skill.id];
+
+        if (lp.x < minX) minX = lp.x;
+        if (lp.x > maxX) maxX = lp.x;
+        if (lp.y < minY) minY = lp.y;
+        if (lp.y > maxY) maxY = lp.y;
         
-        // Gira cada árvore para que ela cresça apontando para fora do centro da roleta
         const rot = angle - Math.PI / 2;
         const rx = lp.x * Math.cos(rot) - lp.y * Math.sin(rot);
         const ry = lp.x * Math.sin(rot) + lp.y * Math.cos(rot);
@@ -1439,12 +1443,17 @@ const SkillRenderer = (() => {
         
         createNode(skill, pos, isUnlocked, canUnlock, entry.cls, stateData.pericias);
         
-        // Marcamos o nó com a classe dele para podermos dar destaque no final
         const lastNode = nodeObjects[nodeObjects.length - 1];
         lastNode.treeCls = entry.cls;
       });
 
-      // Recria as conexões em tamanho real
+      if (minX !== Infinity) {
+        const center_x = (minX + maxX) / 2;
+        const center_y = minY + (maxY - minY) * 0.25;
+        if (entry.cls === oldClass) { oldCx = center_x; oldCy = center_y; }
+        if (entry.cls === newClass) { newCx = center_x; newCy = center_y; }
+      }
+
       graph.skills.forEach(skill => {
         if (!treePositions[skill.id]) return;
         skill.deps.forEach(depName => {
@@ -1459,7 +1468,11 @@ const SkillRenderer = (() => {
       });
     });
 
-    // 4. Calcula as posições na roleta
+    if (oldClass === '_all') {
+      oldCx = newCx;
+      oldCy = newCy;
+    }
+
     const oldIdx = oldClass === '_all' ? 0 : Math.max(0, allEntries.findIndex(e => e.cls === oldClass));
     const newIdx = newClass === '_all' ? 0 : Math.max(0, allEntries.findIndex(e => e.cls === newClass));
 
@@ -1469,61 +1482,65 @@ const SkillRenderer = (() => {
     let startRot = (Math.PI / 2) - oldAngle;
     let endRot = (Math.PI / 2) - newAngle;
 
-    // Garante o giro pelo caminho mais curto
     while (endRot - startRot > Math.PI) endRot -= Math.PI * 2;
     while (endRot - startRot < -Math.PI) endRot += Math.PI * 2;
 
-    // 5. Configura Câmera e Grupo
-    // Movemos o eixo da roleta lá para baixo (-R), com um pequeno ajuste (-15) 
-    // para imitar o centro vertical exato de uma árvore individual.
-    const offsetY = -15; 
-    mainGroup.position.set(0, -R + offsetY, 0);
-    mainGroup.rotation.set(-0.3 * 0.3, 0, startRot); // Mantém o leve tilt 3D
+    // --- CORREÇÃO DA ROTAÇÃO E EIXOS ---
+    // ZXY garante que a roleta gire plana (Z) e só depois incline para trás (X), alinhando perfeitamente.
+    mainGroup.rotation.order = 'ZXY';
+    mainGroup.position.set(-oldCx, -R - oldCy, 0);
+    mainGroup.rotation.set(-0.3 * 0.3, 0, startRot);
 
-    // O Zoom padrão é 18. Vamos afastar só até 38 para ver o movimento sem perder a escala
-    const baseZ = 12; 
-    const peakZ = 20; 
-    camera.position.set(0, 2, baseZ);
-    camera.rotation.x = -0.35;
+    const baseZ = 18; 
+    const peakZ = 38; 
+    camera.position.set(0, -2, baseZ);
+    camera.rotation.x = 0.3;
 
-    // Filtra os nós para aplicar os efeitos visuais
-    const unlockedNodes = nodeObjects.filter(n => n.mesh.userData.isUnlocked);
-    const newTreeNodes = nodeObjects.filter(n => n.treeCls === newClass);
+    // --- CORREÇÃO DO FLARE/RASTRO ---
+    // Salvamos nossos objetos e limpamos a array oficial para que o loop principal
+    // (animate) pare de interferir nos nossos materiais durante a transição!
+    const wheelNodes = [...nodeObjects];
+    nodeObjects = []; 
 
-    const duration = 1100; // Duração do giro
+    const unlockedNodes = wheelNodes.filter(n => n.mesh.userData.isUnlocked);
+    const newTreeNodes = wheelNodes.filter(n => n.treeCls === newClass);
+
+    const duration = 1100;
     const startTime = performance.now();
 
     function animateStep(time) {
       let t = (time - startTime) / duration;
       if (t > 1) t = 1;
 
-      // Easing suave (arranca devagar, corre no meio, freia no final)
       const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-      // A. Gira a Roleta
-      mainGroup.rotation.z = startRot + (endRot - startRot) * ease;
+      // Interpola a rotação e a posição central
+      mainGroup.rotation.set(-0.09, 0, startRot + (endRot - startRot) * ease);
+      const currentCx = oldCx + (newCx - oldCx) * ease;
+      const currentCy = oldCy + (newCy - oldCy) * ease;
+      mainGroup.position.set(-currentCx, -R - currentCy, 0);
 
-      // B. Zoom Out mínimo em formato de arco (afasta e volta)
+      // Zoom Out
       const zoomCurve = Math.sin(t * Math.PI);
       camera.position.z = baseZ + zoomCurve * (peakZ - baseZ);
 
-      // C. Flare de energia nas habilidades já desbloqueadas (rastro de luz)
+      // Flare massivo que agora VAI funcionar e criar um rastro
       const flare = Math.sin(t * Math.PI);
       unlockedNodes.forEach(obj => {
         const baseGlowScale = obj.skill.rank === 0 ? 3.2 : 2.2;
-        obj.glowMesh.scale.setScalar(baseGlowScale + flare * 2.5);
-        obj.glowMat.opacity = 0.45 + flare * 0.55;
+        obj.glowMesh.scale.setScalar(baseGlowScale + flare * 4.0); // Ainda maior para o rastro
+        obj.glowMat.opacity = 0.45 + flare * 0.65;
+        
         const baseColor = obj.skill.rank === 0 ? obj.rootColor : obj.baseColor;
-        obj.crystalMat.emissive = new THREE.Color(baseColor).multiplyScalar((obj.skill.rank === 0 ? 1.5 : 0.9) + flare * 2.0);
+        obj.crystalMat.emissive = new THREE.Color(baseColor).multiplyScalar((obj.skill.rank === 0 ? 1.5 : 0.9) + flare * 4.0);
       });
 
-      // D. Destaca a Nova Árvore (Acende as gemas bloqueadas de leve quando a árvore chega)
+      // Pulso de infusão na classe alvo
       if (t > 0.6) {
-        const highlight = (t - 0.6) / 0.4; // Vai de 0 a 1 apenas no trecho final da animação
+        const highlight = (t - 0.6) / 0.4;
         newTreeNodes.forEach(obj => {
           if (!obj.mesh.userData.isUnlocked) {
-            // Um pequeno pulso de luz nas habilidades que ainda estão travadas
-            obj.crystalMat.emissive.addScalar(highlight * 0.12);
+            obj.crystalMat.emissive.addScalar(highlight * 0.15);
           }
         });
       }
@@ -1531,9 +1548,12 @@ const SkillRenderer = (() => {
       if (t < 1) {
         requestAnimationFrame(animateStep);
       } else {
-        // Fim da animação: Reseta os parâmetros globais e renderiza a view final original
-        mainGroup.rotation.set(-0.3 * 0.3, 0, 0);
+        // Fim da animação: Reseta a ordem matemática para a engine não bugar a árvore individual
+        mainGroup.rotation.order = 'XYZ';
+        mainGroup.rotation.set(-0.09, 0, 0);
         mainGroup.position.set(0, 0, 0);
+        
+        // Devolve o controle para o construtor principal
         onComplete();
       }
     }
