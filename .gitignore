@@ -9,4 +9,5 @@ build/
 *.egg-info/
 node_modules/
 inspecionar_pdf.js
-graphify-out/obsidian
+graphify-out/
+.claude/
