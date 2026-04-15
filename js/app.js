@@ -5,7 +5,6 @@
 
 const App = (() => {
 
-  // ---- STATE ----
   // ---- RADIANT WHEEL DATA ----
   // Vinculadores at index 0 = top (12h / norte). 10 ordens em círculo completo.
   const WHEEL_ORDERS = [
@@ -715,50 +714,6 @@ const App = (() => {
       for (const s of pool) byId.set(s.id, s);
     }
 
-    // // Collect "direct" unlocks (user purchased — not auto-unlocked by shared-name or singer logic)
-    // const directSkills = [];
-    // for (const id of state.unlockedSkills) {
-    //   if (state.freeUnlockedSkills.has(id)) continue;
-    //   if (state.singerFreeIds.has(id)) continue;
-    //   const skill = byId.get(id);
-    //   if (skill) directSkills.push(skill);
-    // }
-
-    // // Count direct purchases per class (to resolve ties when an old save lacks freeUnlockedSkills)
-    // const classDirectCount = {};
-    // for (const sk of directSkills) {
-    //   classDirectCount[sk.cls] = (classDirectCount[sk.cls] || 0) + 1;
-    // }
-
-    // // Deduplicate by name: keep the copy from the class with the most direct purchases.
-    // // This correctly handles old saves / edge cases where freeUnlockedSkills is incomplete.
-    // const seenNames = new Map(); // name → winning skill
-    // const grouped = {};         // cls → [skill]
-
-    // for (const skill of directSkills) {
-    //   const prev = seenNames.get(skill.name);
-    //   if (prev) {
-    //     const prevCount = classDirectCount[prev.cls] || 0;
-    //     const newCount  = classDirectCount[skill.cls] || 0;
-    //     if (newCount > prevCount) {
-    //       // Replace: remove prev entry, add new one
-    //       const oldArr = grouped[prev.cls];
-    //       if (oldArr) {
-    //         const idx = oldArr.findIndex(s => s.name === skill.name);
-    //         if (idx >= 0) oldArr.splice(idx, 1);
-    //         if (oldArr.length === 0) delete grouped[prev.cls];
-    //       }
-    //       seenNames.set(skill.name, skill);
-    //       if (!grouped[skill.cls]) grouped[skill.cls] = [];
-    //       grouped[skill.cls].push(skill);
-    //     }
-    //     // else keep prev winner (do nothing)
-    //   } else {
-    //     seenNames.set(skill.name, skill);
-    //     if (!grouped[skill.cls]) grouped[skill.cls] = [];
-    //     grouped[skill.cls].push(skill);
-    //   }
-    // }
     // Coleta todos, avaliaremos o empate garantindo que sua classe escolhida vença
     const candidateSkills = [];
     for (const id of state.unlockedSkills) {
@@ -1114,7 +1069,6 @@ const App = (() => {
 
     if (!unlocked) {
       container.innerHTML = '<div class="radiant-placeholder">Disponivel a partir do Nível 2</div>';
-      renderRadiantPericias();
       updateViewportGlyph();
       return;
     }
@@ -1151,63 +1105,7 @@ const App = (() => {
       }
     }
 
-    renderRadiantPericias();
     updateViewportGlyph();
-  }
-
-  function renderRadiantPericias() {
-    const container = document.getElementById('radiant-pericias');
-    if (!container) return;
-    const cls = state.profile.radiantClass;
-    if (!cls) { container.innerHTML = ''; return; }
-
-    const perKeys = CosData.RADIANT_CLASS_PERICIAS[cls] || [];
-    if (perKeys.length === 0) { container.innerHTML = ''; return; }
-
-    container.innerHTML = '<div class="surtos-label">Surtos</div>';
-    const grid = document.createElement('div');
-    grid.className = 'pericias-grid surtos-grid';
-
-    for (const key of perKeys) {
-      const info = CosData.PERICIAS_RADIANTES[key];
-      if (!info) continue;
-      
-      const rank = state.radiantPericias[key] || 0;
-      const attrVal = state.attributes[info.attr] || 0;
-      const total = rank + attrVal;
-
-      const div = document.createElement('div');
-      div.className = 'pericia-item';
-      div.innerHTML = `
-        <span class="pericia-name surto-name">
-          ${info.name} <span style="font-size: 0.7em; color: var(--text-muted)">(${CosData.ATTRIBUTES[info.attr].abbr})</span>
-        </span>
-        <div class="pericia-controls">
-          <button class="pericia-btn" data-radper="${key}" data-dir="-1" title="Diminuir Rank">&minus;</button>
-          <span class="pericia-val" title="Rank: ${rank} | Atributo: ${attrVal}">${total}</span>
-          <button class="pericia-btn" data-radper="${key}" data-dir="1" title="Aumentar Rank">+</button>
-        </div>
-      `;
-      grid.appendChild(div);
-    }
-    container.appendChild(grid);
-
-    container.querySelectorAll('[data-radper]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.dataset.radper;
-        const dir = parseInt(btn.dataset.dir);
-        const newVal = (state.radiantPericias[key] || 0) + dir;
-        const maxRank = getMaxPericiaRank();
-        if (newVal < 0 || newVal > maxRank) return;
-        if (dir > 0 && getPericiaPointsRemaining() <= 0) {
-          notify('Sem pontos de pericia');
-          return;
-        }
-        state.radiantPericias[key] = newVal;
-        renderSidebar();
-        rebuildTree(true);
-      });
-    });
   }
 
   function renderPoints() {
@@ -1448,10 +1346,6 @@ const App = (() => {
     });
   }
 
-  // Substitua o renderRadiantPericias por uma função vazia para não quebrar outras chamadas
-  function renderRadiantPericias() { 
-      // Obsoleto: os surtos agora são renderizados junto com as perícias em renderPericias()
-  }
 
   function renderClassTabs() {
     const container = document.getElementById('class-tabs');
@@ -1482,10 +1376,6 @@ const App = (() => {
       btn.textContent = cls;
       btn.style.borderBottomColor = cls === state.activeClass ? `var(--color-${cls})` : 'transparent';
       btn.addEventListener('click', () => {
-        // if (state.activeClass === cls) return;
-        // state.activeClass = cls;
-        // renderClassTabs();
-        // triggerTabSlide(() => rebuildTree());
         if (state.activeClass === cls) return;
         const oldClass = state.activeClass; // Guarda quem era a classe antiga
         state.activeClass = cls;
@@ -2402,7 +2292,6 @@ const App = (() => {
     });
   }
 
-  // (PDF export movido para js/export.js — PdfExport)
   return { init, state, exportToSheet: PdfExport.exportToSheet };
 
 })();

@@ -165,7 +165,6 @@ const SkillRenderer = (() => {
     // Pan / zoom
     let isDragging = false, dragStart = { x:0, y:0 }, groupStart = { x:0, y:0 };
     container.addEventListener('mousedown', e => {
-      // isDragging = true;
       if (e.target.tagName !== 'CANVAS') return;
       isDragging = true;
       dragStart = { x: e.clientX, y: e.clientY };
@@ -415,8 +414,6 @@ const SkillRenderer = (() => {
     }
   }
 
-  // ---- LAYOUT ALGORITHM ----
-
   // ---- ORGANIC / CONSTELLATION LAYOUT ----
   // Seeded PRNG for deterministic "random" positions per class
   function seededRng(seed) {
@@ -663,8 +660,7 @@ const SkillRenderer = (() => {
       roughness: 0.05,
       metalness: 0.0,
       transparent: true,
-      opacity: isUnlocked ? 0.3 : 0.3,
-      // opacity: isUnlocked ? 0.01 : 0.05,
+      opacity: 0.3,
       clearcoat: 1.0,
       clearcoatRoughness: 0.05,
       depthWrite: false,
@@ -898,45 +894,6 @@ const SkillRenderer = (() => {
       }
     }
 
-    // // Animate smoke particles
-    // for (const p of smokeParticles) {
-    //   if (p.type === 'helix') {
-    //     // Partícula avança ao longo da linha e orbita em hélix
-    //     const t = (p.travelOffset + time * p.travelSpeed) % 1.0;
-    //     const angle = p.phaseOffset + t * Math.PI * 2 * p.turns;
-
-    //     const lx = p.from.x + (p.to.x - p.from.x) * t;
-    //     const ly = p.from.y + (p.to.y - p.from.y) * t;
-    //     const lz = p.from.z + (p.to.z - p.from.z) * t;
-    //     const r  = p.helixRadius;
-    //     const ca = Math.cos(angle), sa = Math.sin(angle);
-
-    //     p.mesh.position.set(
-    //       lx + r * (ca * p.right.x + sa * p.perp.x),
-    //       ly + r * (ca * p.right.y + sa * p.perp.y),
-    //       lz + r * (ca * p.right.z + sa * p.perp.z),
-    //     );
-
-    //     // Fade nas bordas para esconder o loop; pulso suave de tamanho
-    //     const fade  = Math.sin(t * Math.PI);
-    //     const scale = 0.42 + Math.sin(time * 2.5 + p.phaseOffset) * 0.10;
-    //     p.mesh.scale.set(scale, scale, 1);
-    //     p.mesh.material.opacity = 0.50 * fade;
-
-    //   } else if (p.type === 'gem') {
-    //     // Partícula deriva para fora da gema e desvanece
-    //     p.life = (p.life + 0.007) % 1.0;
-    //     const age = p.life * p.lifetime;
-    //     p.mesh.position.set(
-    //       p.basePos.x + p.dx * age,
-    //       p.basePos.y + p.dy * age,
-    //       p.basePos.z + p.dz * age,
-    //     );
-    //     p.mesh.material.opacity = Math.sin(p.life * Math.PI) * p.maxOpacity;
-    //     const scale = 0.12 + p.life * 0.32;
-    //     p.mesh.scale.set(scale, scale, 1);
-    //   }
-    // }
     // Animate smoke particles
     for (let i = smokeParticles.length - 1; i >= 0; i--) {
       const p = smokeParticles[i];
