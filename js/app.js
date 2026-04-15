@@ -2306,6 +2306,70 @@ const App = (() => {
         hideRadiantWheel();
       }
     });
+
+    // ============================================================
+    // VIEW SETTINGS PANEL (Configurações da Visualização)
+    // ============================================================
+    
+    const vspPanel = document.getElementById('view-settings-panel');
+    const btnVsp = document.getElementById('btn-viewport-settings');
+    const vspClose = document.getElementById('vsp-close');
+    const vspBackdrop = document.getElementById('vsp-backdrop');
+
+    // Elementos de Input e Display
+    const glowInput = document.getElementById('cfg-node-glow');
+    const glowVal = document.getElementById('cfg-node-glow-val');
+    const lineOpacityInput = document.getElementById('cfg-line-opacity');
+    const lineOpacityVal = document.getElementById('cfg-line-opacity-val');
+    const subLabelsInput = document.getElementById('cfg-sub-labels');
+
+    // 1. Inicializar os valores do HTML com base no estado atual do Renderer
+    if (typeof SkillRenderer !== 'undefined') {
+      const initialConfig = SkillRenderer.getConfig();
+      if (glowInput) {
+        glowInput.value = initialConfig.nodeGlow;
+        glowVal.textContent = initialConfig.nodeGlow.toFixed(1);
+      }
+      if (lineOpacityInput) {
+        lineOpacityInput.value = initialConfig.lineOpacity;
+        lineOpacityVal.textContent = initialConfig.lineOpacity.toFixed(1);
+      }
+      if (subLabelsInput) {
+        subLabelsInput.checked = initialConfig.showSubLabels;
+      }
+    }
+
+    // 2. Abrir e Fechar o Painel
+    btnVsp?.addEventListener('click', () => vspPanel?.classList.add('visible'));
+    vspClose?.addEventListener('click', () => vspPanel?.classList.remove('visible'));
+    vspBackdrop?.addEventListener('click', () => vspPanel?.classList.remove('visible'));
+    
+    // Fechar também com a tecla Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && vspPanel?.classList.contains('visible')) {
+        vspPanel.classList.remove('visible');
+      }
+    });
+
+    // 3. Eventos dos Sliders (aplicam-se em tempo real na animação)
+    glowInput?.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      glowVal.textContent = val.toFixed(1);
+      SkillRenderer.setConfig({ nodeGlow: val });
+    });
+
+    lineOpacityInput?.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      lineOpacityVal.textContent = val.toFixed(1);
+      SkillRenderer.setConfig({ lineOpacity: val });
+    });
+
+    // 4. Evento do Checkbox de Subclasses (exige recriar a árvore)
+    subLabelsInput?.addEventListener('change', (e) => {
+      SkillRenderer.setConfig({ showSubLabels: e.target.checked });
+      // Reconstruímos a árvore passando 'true' para manter o Zoom/Pan (posição da câmara) atual do utilizador
+      rebuildTree(true); 
+    });
   }
 
   return { init, state, exportToSheet: PdfExport.exportToSheet };

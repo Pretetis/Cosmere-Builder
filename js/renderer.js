@@ -1314,18 +1314,18 @@ const SkillRenderer = (() => {
 
     const hex = COLOR_MAP[cls] !== undefined ? COLOR_MAP[cls] : 0xc084fc;
     const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
-    ctx.fillStyle = `rgba(${r},${g},${b},0.5)`;
+    
+    // Aumentei a opacidade para 0.85 para ficar mais nítido fora dos nodes
+    ctx.fillStyle = `rgba(${r},${g},${b},0.85)`;
     ctx.fillText(sub, canvasW / 2, canvasH / 2);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
     const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
     const sprite = new THREE.Sprite(mat);
-    // Offset outward from the origin so the label sits past the centroid of the branch
-    const len = Math.sqrt(x * x + y * y);
-    const ox = len > 0.1 ? x + (x / len) * 1.5 : x;
-    const oy = len > 0.1 ? y + (y / len) * 1.5 : y;
-    sprite.position.set(ox, oy, 0.5);
+    
+    // Usar diretamente as coordenadas exatas fornecidas pela nova lógica e baixar ligeiramente o Z
+    sprite.position.set(x, y, 0.1); 
     sprite.scale.set(canvasW / canvasH * 0.85, 0.85, 1);
     mainGroup.add(sprite);
   }
@@ -1336,13 +1336,42 @@ const SkillRenderer = (() => {
       if (!sub || sub === '-') continue;
       const subSkills = skills.filter(s => s.sub === sub);
       if (subSkills.length === 0) continue;
+
+      // 1. Encontrar o centróide desta subclasse
       let cx = 0, cy = 0, count = 0;
       for (const s of subSkills) {
         const p = positions[s.id];
         if (p) { cx += p.x; cy += p.y; count++; }
       }
       if (count === 0) continue;
-      createSubLabel(sub, cx / count, cy / count, cls);
+      cx /= count;
+      cy /= count;
+
+      // 2. Descobrir a direção do centro da árvore para o centróide
+      const len = Math.sqrt(cx * cx + cy * cy);
+      let dx = 0, dy = 1; 
+      if (len > 0.1) {
+        dx = cx / len;
+        dy = cy / len;
+      }
+
+      // 3. Encontrar o node desta subclasse que está mais na ponta (mais distante do centro)
+      let maxProjectedDist = 0;
+      for (const s of subSkills) {
+        const p = positions[s.id];
+        if (p) {
+          const dist = p.x * dx + p.y * dy;
+          if (dist > maxProjectedDist) maxProjectedDist = dist;
+        }
+      }
+
+      // 4. Posicionar o texto além desse node mais distante
+      // O offset de 2.0 afasta o texto da área de colisão e do brilho (glow) do node
+      const offsetBuffer = 2.0; 
+      const labelX = dx * (maxProjectedDist + offsetBuffer);
+      const labelY = dy * (maxProjectedDist + offsetBuffer);
+
+      createSubLabel(sub, labelX, labelY, cls);
     }
   }
 
@@ -1466,6 +1495,35 @@ const SkillRenderer = (() => {
     }
   }
 
+  // Calcula o Z ideal para que todos os nós fornecidos caibam na tela
+  function calculateFitZoom(nodes, padding = 2.5) {
+    if (!nodes || nodes.length === 0) return CAMERA_DISTANCE;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    nodes.forEach(obj => {
+      const p = obj.pos;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+
+    const width = (maxX - minX) + padding * 2;
+    const height = (maxY - minY) + padding * 2;
+
+    const halfFovRad = (camera.fov / 2) * Math.PI / 180;
+    
+    // Distância necessária para caber a altura
+    const zForHeight = (height / 2) / Math.tan(halfFovRad);
+    // Distância necessária para caber a largura (considerando o aspect ratio)
+    const zForWidth = (width / 2) / (Math.tan(halfFovRad) * camera.aspect);
+
+    // Retorna o maior dos dois, com um limite mínimo e máximo de segurança
+    return Math.min(50, Math.max(12, Math.max(zForHeight, zForWidth)));
+  }
+
   // ---- ANIMATION: ROLETA EM TAMANHO REAL ----
   function transitionToClass(oldClass, newClass, stateData, onComplete) {
     clearTree();
@@ -1568,7 +1626,6 @@ const SkillRenderer = (() => {
     while (endRot - startRot < -Math.PI) endRot += Math.PI * 2;
 
     // --- CORREÇÃO DA ROTAÇÃO E EIXOS ---
-    // Projetar a diferença trigonométrica do Tilt da câmera para evitar o pulo 3D no final do zoom
     const tiltX = -0.09;
     const rCos = R * Math.cos(tiltX);
     const rSin = R * Math.sin(tiltX);
@@ -1588,10 +1645,12 @@ const SkillRenderer = (() => {
 
     const unlockedNodes = wheelNodes.filter(n => n.mesh.userData.isUnlocked);
     const newTreeNodes = wheelNodes.filter(n => n.treeCls === newClass);
+    const targetZoom = calculateFitZoom(newTreeNodes); // Calcula o zoom ideal
 
     const duration = 1100;
     const startTime = performance.now();
-    const vPos = new THREE.Vector3(); // Reutilizado para performance
+
+    const vPos = new THREE.Vector3();
 
     function animateStep(time) {
       let t = (time - startTime) / duration;
@@ -1599,15 +1658,16 @@ const SkillRenderer = (() => {
 
       const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-      // Interpola a rotação e a posição central (com a projeção perfeita do cosseno/seno)
+      // Interpola a rotação e a posição central
       mainGroup.rotation.set(tiltX, 0, startRot + (endRot - startRot) * ease);
       const currentCx = oldCx + (newCx - oldCx) * ease;
       const currentCy = oldCy + (newCy - oldCy) * ease;
       mainGroup.position.set(-currentCx, -currentCy - rCos, -rSin);
 
-      // Zoom Out
-      const zoomCurve = Math.sin(t * Math.PI);
-      camera.position.z = baseZ + zoomCurve * (peakZ - baseZ);
+      // Zoom Out Corrigido
+      const zoomOutCurve = Math.sin(t * Math.PI);
+      const currentBaseZ = baseZ + (targetZoom - baseZ) * ease;
+      camera.position.z = currentBaseZ + zoomOutCurve * (peakZ - baseZ);
 
       // Flare massivo
       const flare = Math.sin(t * Math.PI);
@@ -1621,7 +1681,6 @@ const SkillRenderer = (() => {
         obj.crystalMat.emissive = new THREE.Color(baseColor).multiplyScalar((obj.skill.rank === 0 ? 1.5 : 0.9) + flare * 4.0);
 
         // --- STAR TRAIL EFFECT ---
-        // Emitir rastro na posição mundial se a animação estiver rodando a todo vapor
         if (t > 0.05 && t < 0.95 && Math.random() > 0.3) {
           obj.mesh.getWorldPosition(vPos);
           const mat = new THREE.SpriteMaterial({
@@ -1635,14 +1694,13 @@ const SkillRenderer = (() => {
           const sprite = new THREE.Sprite(mat);
           sprite.position.copy(vPos);
           
-          // Uma espalhada leve nas partículas para deixá-las mais ricas
           sprite.position.x += (Math.random() - 0.5) * 0.8;
           sprite.position.y += (Math.random() - 0.5) * 0.8;
           sprite.position.z += (Math.random() - 0.5) * 0.8;
 
           const baseScale = obj.skill.rank === 0 ? 3.5 : 2.0;
           sprite.scale.set(baseScale, baseScale, 1);
-          scene.add(sprite); // Coloca direto na scene (mundo) para não girar junto com o mainGroup
+          scene.add(sprite);
 
           smokeParticles.push({
             type: 'trail',
@@ -1664,9 +1722,7 @@ const SkillRenderer = (() => {
         });
       }
 
-      // Fade out all wheel nodes in the last 20% so the rebuild is invisible.
-      // This eliminates the position jump caused by non-zero wheel rotation on
-      // all classes except Agente (index 0, rot=0).
+      // Fade out
       if (t > 0.8) {
         const fadeOut = 1 - (t - 0.8) / 0.2;
         wheelNodes.forEach(n => {
@@ -1682,14 +1738,13 @@ const SkillRenderer = (() => {
       if (t < 1) {
         requestAnimationFrame(animateStep);
       } else {
-        // Set camera/mainGroup to exactly match what centerCamera would
-        // produce for the new class's single-tree view, so rebuildTree(keepView)
-        // produces no visible jump.
         mainGroup.rotation.order = 'XYZ';
         mainGroup.rotation.set(-CAMERA_TILT * 0.3, 0, 0);
         mainGroup.position.set(-newCx, -newCy, 0);
-        camera.position.set(0, -2, CAMERA_DISTANCE);
-        camera.rotation.x = CAMERA_TILT;
+        
+        // Posição final com o zoom calculado
+        camera.position.set(0, -2, targetZoom); 
+        camera.rotation.x = 0.3;
 
         onComplete();
       }
@@ -1697,7 +1752,6 @@ const SkillRenderer = (() => {
 
     requestAnimationFrame(animateStep);
   }
-
   return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass, setConfig, getConfig };
 
 })();
