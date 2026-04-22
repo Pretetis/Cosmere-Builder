@@ -171,29 +171,6 @@ Limitadas por rank máximo conforme patamar (rank 2→3→4→5)
 - [x] Exportação de ficha em PDF via pdf-lib
 - [x] Tooltip e modal de detalhes ao clicar em nós
 
----
-
-## Melhorias Futuras / Backlog
-
-<!-- Adicione aqui as features planejadas -->
-- [ ] TODO: descrever aqui
-- [ ] TODO: descrever aqui
-
----
-
-## Bugs Conhecidos / Notas Técnicas
-
-<!-- Registre comportamentos inesperados e workarounds -->
-- TODO: preencher conforme encontrado
-
----
-
-## Histórico de Atualizações
-
-<!-- Registre mudanças significativas -->
-| Data | Descrição |
-|---|---|
-| 2026-04-10 | Estrutura inicial do projeto |
 
 ---
 

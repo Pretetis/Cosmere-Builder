@@ -643,11 +643,11 @@ const PdfExport = (() => {
           talentLines.push(`  R${s.rank} ${s.name}`);
         }
       }
-      // Divide as linhas entre Talents 1 e Talents 2 (Talents 3 não é usado)
-      const half = Math.ceil(talentLines.length / 2);
-      setField('Talents 1', talentLines.slice(0, half).join('\n'));
-      setField('Talents 2', talentLines.slice(half).join('\n'));
-      setField('Talents 3', ''); // limpa o campo mas não o usa
+      // Distribui até 22 linhas por coluna entre Talents 1, 2 e 3
+      const LINES_PER_COL = 22;
+      setField('Talents 1', talentLines.slice(0, LINES_PER_COL).join('\n'));
+      setField('Talents 2', talentLines.slice(LINES_PER_COL, LINES_PER_COL * 2).join('\n'));
+      setField('Talents 3', talentLines.slice(LINES_PER_COL * 2, LINES_PER_COL * 3).join('\n'));
 
       setField('Health Maximum',    '    '+String(stats.maxHealth));
       setField('Focus Maximum',     '    '+String(stats.maxFocus));

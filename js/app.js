@@ -161,6 +161,7 @@ const App = (() => {
     if (state.profile.radiantClass) {
       const keys = CosData.RADIANT_CLASS_PERICIAS[state.profile.radiantClass] || [];
       for (const k of keys) sum += state.radiantPericias[k] || 0;
+      sum -= keys.length; // 1 rank gratuito por surto ao escolher a ordem
     }
 
     if (state.profile.ancestryClass && CLASS_INITIAL_PERICIA[state.profile.ancestryClass]) {
@@ -176,12 +177,11 @@ const App = (() => {
 
   function getTalentPointsRemaining() {
     let bonus = 0;
-    // Humanos: +1 bônus ancestral; o talento regular (nível 1) e o bônus são ambos restritos
-    // (1º = Rank 0 de classe mundana, 2º = mesma classe)
-    if (state.profile.race === 'human' && state.profile.level >= 1) {
+    // Humanos: +1 bônus ancestral (1º = Rank 0 de classe mundana, 2º = mesma classe)
+    // Cantores: +1 bônus (Mudar Forma grátis, 1º = nova forma Cantor, 2º = Rank 0 classe mundana)
+    if (state.profile.level >= 1 && (state.profile.race === 'human' || state.profile.race === 'singer')) {
       bonus = 1;
     }
-    // Cantores: sem bônus (Mudar Forma é grátis via singerFreeIds, não conta em spentTalents)
     return getPointsAvailable().totalTalents + bonus - state.spentTalents;
   }
 
@@ -268,6 +268,15 @@ const App = (() => {
   }
 
   // ---- ADDITIONAL SKILL UNLOCK CHECK ----
+  function _singerHasNovaForma() {
+    const addSkills = CosData.ADDITIONAL_SKILLS || [];
+    const cantorIds = new Set(addSkills.filter(s => s.cls === 'Cantor').map(s => s.id));
+    for (const id of state.unlockedSkills) {
+      if (!state.singerFreeIds.has(id) && cantorIds.has(id)) return true;
+    }
+    return false;
+  }
+
   function canUnlockAdditionalSkill(skill) {
     if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Já desbloqueado' };
 
@@ -276,6 +285,10 @@ const App = (() => {
     }
     if (skill.cls === 'Cantor' && state.profile.race !== 'singer') {
       return { can: false, reason: 'Requer ancestralidade Cantor' };
+    }
+    // Singer: após comprar nova forma, deve comprar talento de classe antes de mais formas
+    if (skill.cls === 'Cantor' && state.profile.race === 'singer' && _singerHasNovaForma() && !state.profile.ancestryClass) {
+      return { can: false, reason: 'Cantor: compre um talento de classe mundana primeiro' };
     }
 
     if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
@@ -345,6 +358,18 @@ const App = (() => {
         // 2º talento: deve ser na mesma classe do 1º
         if (state.profile.ancestryClass && skill.cls !== state.profile.ancestryClass) {
           return { can: false, reason: `Ancestral Humano: deve ser da classe ${state.profile.ancestryClass}` };
+        }
+      }
+    }
+
+    // Singer ancestry restriction
+    if (state.profile.race === 'singer') {
+      if (!_singerHasNovaForma()) {
+        return { can: false, reason: 'Cantor: escolha uma Nova Forma primeiro' };
+      }
+      if (!state.profile.ancestryClass) {
+        if (skill.rank !== 0 || !CosData.CLASSES.includes(skill.cls)) {
+          return { can: false, reason: 'Cantor: 2º talento deve ser Rank 0 de classe mundana' };
         }
       }
     }
@@ -1062,19 +1087,87 @@ const App = (() => {
     document.getElementById('radiant-wheel').classList.remove('visible');
   }
 
+  function _showOathAnimation(cls, color, glyphSrc) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'radiant-oath-overlay';
+
+      overlay.style.setProperty('--oath-color', color);
+
+      const PHRASES = [
+        'Vida antes da Morte',
+        'Força antes da Fraqueza',
+        'Jornada antes do Destino',
+      ];
+
+      overlay.innerHTML = `
+        <div class="oath-glyph-wrap">
+          <img src="${glyphSrc}" alt="${cls}">
+        </div>
+        <div class="oath-phrases">
+          ${PHRASES.map(p => `<div class="oath-phrase">${p}</div>`).join('')}
+        </div>
+        <div class="oath-order-name">${cls}</div>
+      `;
+
+      document.body.appendChild(overlay);
+
+      const glyph  = overlay.querySelector('.oath-glyph-wrap');
+      const phrases = overlay.querySelectorAll('.oath-phrase');
+      const orderName = overlay.querySelector('.oath-order-name');
+
+      // t=0: fade in overlay
+      requestAnimationFrame(() => {
+        overlay.classList.add('visible');
+        setTimeout(() => { glyph.classList.add('show'); }, 100);
+        setTimeout(() => { glyph.classList.add('pulsing'); }, 800);
+
+        // Frases aparecem uma por uma com vento revelando as letras
+        const PHRASE_DELAY = [950, 2050, 3150];
+        phrases.forEach((el, i) => {
+          setTimeout(() => {
+            phrases.forEach((p, j) => { if (j < i) p.classList.add('dim'); });
+            el.classList.add('show');
+          }, PHRASE_DELAY[i]);
+        });
+
+        // Nome da ordem
+        setTimeout(() => {
+          phrases.forEach(p => p.classList.add('dim'));
+          orderName.classList.add('show');
+        }, 4400);
+
+        // Fade out
+        setTimeout(() => {
+          overlay.classList.add('fade-out');
+          setTimeout(() => {
+            overlay.remove();
+            resolve();
+          }, 600);
+        }, 5600);
+      });
+    });
+  }
+
   async function selectRadiantOrder(cls) {
     state.profile.radiantClass = cls;
-    // Ao escolher, já limpamos surtos anteriores se houver troca antes de selar
-    state.radiantPericias = {}; 
-    
-    await buildRadiantWheel(); 
+    // Limpa surtos anteriores e concede 1 rank gratuito em cada surto da nova ordem
+    state.radiantPericias = {};
+    const surgeKeys = CosData.RADIANT_CLASS_PERICIAS[cls] || [];
+    for (const k of surgeKeys) state.radiantPericias[k] = 1;
 
-    setTimeout(() => {
-      hideRadiantWheel();
-      renderSidebar(); // Força a atualização de toda a barra lateral, incluindo perícias
-      renderClassTabs();
-      rebuildTree();
-    }, 420);
+    hideRadiantWheel();
+
+    const color = clsColor(cls) || '#d4a853';
+    const svgText = _wheelSvgCache[WHEEL_SVG_MAP[cls]] || null;
+    const glyphSrc = coloredSvgSrc(svgText, color) || (WHEEL_SVG_MAP[cls] || '');
+
+    await _showOathAnimation(cls, color, glyphSrc);
+
+    await buildRadiantWheel();
+    renderSidebar();
+    renderClassTabs();
+    rebuildTree();
   }
 
   function renderRadiantSection() {
@@ -1336,7 +1429,12 @@ const App = (() => {
         const newVal = (currentVal === idx) ? idx - 1 : idx;
 
         if (!isRadiant && key === initialClassKey && newVal < 1) {
-          notify(`O 1º Rank de ${CosData.PERICIAS[key].name} é fixo pela sua Trilha Inicial (${state.profile.initialClass}).`);
+          notify(`O 1º Rank de ${CosData.PERICIAS[key].name} é fixo pela sua Trilha Inicial.`);
+          return;
+        }
+
+        if (isRadiant && newVal < 1) {
+          notify('O 1º Rank de cada Surto é concedido gratuitamente ao escolher a Ordem Radiante.');
           return;
         }
 

@@ -1315,6 +1315,142 @@ html, body {
 }
 
 /* ============================================================
+   OATH ANIMATION OVERLAY (Primeira Jura)
+   ============================================================ */
+
+#radiant-oath-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 3, 10, 0.97);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+#radiant-oath-overlay.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+#radiant-oath-overlay.fade-out {
+  opacity: 0;
+}
+
+.oath-glyph-wrap {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 36px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.oath-glyph-wrap.show {
+  opacity: 1;
+  transform: scale(1);
+}
+.oath-glyph-wrap img {
+  width: 100%;
+  height: 100%;
+}
+
+.oath-phrases {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+
+.oath-phrase {
+  font-family: 'Cinzel', serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #fff;
+  opacity: 0;
+  position: relative;
+}
+.oath-phrase.show {
+  opacity: 1;
+  animation: oath-wind-in 1.2s cubic-bezier(0.22, 0.6, 0.36, 1) forwards;
+}
+/* Frente de vento luminosa que precede a revelação das letras */
+.oath-phrase.show::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -14%;
+  width: 14%;
+  height: calc(100% + 12px);
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255,255,255,0.25) 35%,
+    rgba(255,255,255,0.7) 50%,
+    rgba(255,255,255,0.25) 65%,
+    transparent 100%
+  );
+  filter: blur(3px);
+  animation: oath-wind-gust 1.2s cubic-bezier(0.22, 0.6, 0.36, 1) forwards;
+  pointer-events: none;
+}
+.oath-phrase.dim {
+  animation: oath-wind-dim 0.7s ease forwards;
+}
+
+@keyframes oath-wind-in {
+  0%   { opacity: 1; clip-path: inset(0 102% 0 0 round 2px); }
+  100% {
+    clip-path: inset(0 0% 0 0 round 2px);
+    text-shadow: 0 0 22px var(--oath-color, #d4a853), 0 0 44px var(--oath-color, #d4a853);
+  }
+}
+@keyframes oath-wind-gust {
+  0%   { left: -14%; }
+  100% { left: 110%; }
+}
+@keyframes oath-wind-dim {
+  to { opacity: 0.22; text-shadow: none; }
+}
+
+.oath-separator {
+  font-family: 'Cinzel', serif;
+  font-size: 14px;
+  color: var(--oath-color, #d4a853);
+  opacity: 0;
+  letter-spacing: 0.3em;
+  transition: opacity 0.4s ease;
+}
+.oath-separator.show { opacity: 0.5; }
+
+.oath-order-name {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--oath-color, #d4a853);
+  opacity: 0;
+  margin-top: 8px;
+  transform: translateY(6px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.oath-order-name.show {
+  opacity: 0.75;
+  transform: translateY(0);
+}
+
+@keyframes oath-glyph-pulse {
+  0%   { filter: drop-shadow(0 0 18px var(--oath-color, #d4a853)) drop-shadow(0 0 40px var(--oath-color, #d4a853)); }
+  50%  { filter: drop-shadow(0 0 40px var(--oath-color, #d4a853)) drop-shadow(0 0 80px var(--oath-color, #d4a853)); }
+  100% { filter: drop-shadow(0 0 18px var(--oath-color, #d4a853)) drop-shadow(0 0 40px var(--oath-color, #d4a853)); }
+}
+.oath-glyph-wrap.pulsing img {
+  animation: oath-glyph-pulse 2.2s ease-in-out infinite;
+}
+
+/* ============================================================
    RADIANT LOCKED DISPLAY (sidebar)
    ============================================================ */
 

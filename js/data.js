@@ -82,7 +82,7 @@ const CosData = (() => {
     let tier, attrPoints, hpGain, maxRank, periciaRanks, talents, ancestryBonus;
     if (lvl === 1) {
       tier = 1; attrPoints = 12; hpGain = '10+FOR'; maxRank = 2;
-      periciaRanks = 5; talents = 1; ancestryBonus = true;
+      periciaRanks = 4; talents = 1; ancestryBonus = true;
     } else if (lvl <= 5) {
       tier = 1;
       attrPoints = (lvl === 3 || lvl === 5) ? 1 : 0;
