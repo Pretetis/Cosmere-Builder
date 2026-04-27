@@ -55,7 +55,7 @@ const CosData = (() => {
     'Corredor dos Ventos':       ['adesao',        'gravitacao'],
     'Rompe-Céu':                 ['divisao',       'gravitacao'],
     'Pulverizador':              ['divisao',       'abrasao'],
-    'Dançarino dos Precipícios': ['abrasao',       'progressao'],
+    'Dançarino de Precipícios':  ['abrasao',       'progressao'],
     'Sentinela da Verdade':      ['progressao',    'iluminacao'],
     'Teceluz':                   ['iluminacao',    'transformacao'],
     'Alternauta':                ['transformacao', 'transporte'],
@@ -150,11 +150,36 @@ const CosData = (() => {
 
   async function loadRadiantSkills() {
     const resp = await fetch('data/br_radiant_paths.json');
-    const raw = await resp.json();
-    // Offset IDs so they never collide with regular skill IDs
-    RADIANT_SKILLS = raw.map(s => ({ ...s, id: s.id + RADIANT_ID_OFFSET }));
+    const data = await resp.json();
 
-    // Derive classes and subclasses from data
+    const flat = [];
+    let counter = 0;
+
+    for (const [cls, order] of Object.entries(data.orders)) {
+      // Bond skills first
+      for (const skill of order.bond) {
+        flat.push({ ...skill, id: (++counter) + RADIANT_ID_OFFSET, cls, prereqText: null, description: '' });
+      }
+
+      // Surge skills — apply per-order overrides where defined
+      for (const surgeName of order.surges) {
+        const surgeSkills = data.surges[surgeName];
+        const overrides = (order.overrides || []).filter(o => o.surge === surgeName);
+
+        for (const skill of surgeSkills) {
+          const override = overrides.find(o => o.name === skill.name);
+          const expanded = { ...skill };
+          if (override) {
+            const { surge: _drop, ...fields } = override;
+            Object.assign(expanded, fields);
+          }
+          flat.push({ ...expanded, id: (++counter) + RADIANT_ID_OFFSET, cls, prereqText: null, description: '' });
+        }
+      }
+    }
+
+    RADIANT_SKILLS = flat;
+
     const clsSet = [];
     const subMap = {};
     for (const s of RADIANT_SKILLS) {

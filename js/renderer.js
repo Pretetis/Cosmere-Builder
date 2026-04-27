@@ -44,7 +44,7 @@ const SkillRenderer = (() => {
     'Corredor dos Ventos':       0x38bdf8,  // azul-céu
     'Rompe-Céu':                 0xfbbf24,  // âmbar
     'Pulverizador':              0xef4444,  // vermelho-chama
-    'Dançarino dos Precipícios': 0x34d399,  // esmeralda
+    'Dançarino de Precipícios': 0x34d399,  // esmeralda
     'Sentinela da Verdade':      0x2dd4bf,  // água-marinha
     'Teceluz':                   0xf0abfc,  // lilás
     'Alternauta':                0xe2e8f0,  // prata
@@ -68,7 +68,7 @@ const SkillRenderer = (() => {
     'Corredor dos Ventos':       'svg/Windrunners_glyph.svg',
     'Rompe-Céu':                 'svg/Skybreakers_glyph.svg',
     'Pulverizador':              'svg/Dustbringers_glyph.svg',
-    'Dançarino dos Precipícios': 'svg/Edgedancers_glyph.svg',
+    'Dançarino de Precipícios': 'svg/Edgedancers_glyph.svg',
     'Sentinela da Verdade':      'svg/Truthwatchers_glyph.svg',
     'Teceluz':                   'svg/Lightweavers_glyph.svg',
     'Alternauta':                'svg/elsecallers_glyph.svg',

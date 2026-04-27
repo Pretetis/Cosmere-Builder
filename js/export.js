@@ -25,7 +25,7 @@ const PdfExport = (() => {
     'Corredor dos Ventos':       [0.1, 0.5, 0.8],
     'Rompe-Céu':                 [0.8, 0.6, 0.1],
     'Pulverizador':              [0.8, 0.2, 0.2],
-    'Dançarino dos Precipícios': [0.1, 0.6, 0.4],
+    'Dançarino de Precipícios': [0.1, 0.6, 0.4],
     'Sentinela da Verdade':      [0.1, 0.6, 0.5],
     'Teceluz':                   [0.7, 0.4, 0.8],
     'Alternauta':                [0.4, 0.4, 0.5],
@@ -37,7 +37,7 @@ const PdfExport = (() => {
   const _PDF_CLASS_ABBREV = {
     'Agente':'Agente','Emissário':'Emissário','Caçador':'Caçador','Líder':'Líder',
     'Erudito':'Erudito','Guerreiro':'Guerreiro','Corredor dos Ventos':'Corre Ventos',
-    'Rompe-Céu':'Rompe céu','Pulverizador':'Pulverizador','Dançarino dos Precipícios':'Dançarino',
+    'Rompe-Céu':'Rompe céu','Pulverizador':'Pulverizador','Dançarino de Precipícios':'Dançarino',
     'Sentinela da Verdade':'Sentinela','Teceluz':'Teceluz','Alternauta':'Alternauta',
     'Plasmador':'Plasmador','Guardião das Pedras':'Guardião','Cantor':'Cantor',
   };
@@ -46,7 +46,7 @@ const PdfExport = (() => {
     'Corredor dos Ventos':       'svg/Windrunners_glyph.svg',
     'Rompe-Céu':                 'svg/Skybreakers_glyph.svg',
     'Pulverizador':              'svg/Dustbringers_glyph.svg',
-    'Dançarino dos Precipícios': 'svg/Edgedancers_glyph.svg',
+    'Dançarino de Precipícios': 'svg/Edgedancers_glyph.svg',
     'Sentinela da Verdade':      'svg/Truthwatchers_glyph.svg',
     'Teceluz':                   'svg/Lightweavers_glyph.svg',
     'Alternauta':                'svg/elsecallers_glyph.svg',

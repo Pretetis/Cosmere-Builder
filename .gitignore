@@ -11,3 +11,5 @@ node_modules/
 inspecionar_pdf.js
 graphify-out/
 .claude/
+confidential/
+temp/

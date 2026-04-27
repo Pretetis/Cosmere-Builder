@@ -281,6 +281,12 @@
           <button class="btn" id="btn-import-pdf" style="flex:1;" type="button">Importar Ficha PDF</button>
           <button class="btn primary" id="btn-sheet" style="flex:1;" onclick="App.exportToSheet()">Exportar Ficha PDF</button>
         </div>
+        <div class="save-load-row" style="margin-top: 6px; gap: 8px; display: flex; align-items: center;">
+          <input type="file" id="book-pdf-input" accept="application/pdf" style="display:none;">
+          <button class="btn" id="btn-load-book" style="flex:1;" type="button">Carregar Livro (PDF)</button>
+          <button class="btn danger" id="btn-clear-book" style="display:none; padding: 0 10px;" title="Remover descrições carregadas">&times;</button>
+        </div>
+        <div id="book-pdf-status" style="display:none; font-size:11px; color: var(--text-muted); padding: 4px 0 0 2px;"></div>
         <div class="credits-link-row">
           <button class="btn-credits-link" id="btn-credits">Créditos &amp; Sobre</button>
         </div>
@@ -310,6 +316,8 @@
   <script src="js/renderer.js"></script>
   <script src="js/saves.js"></script>
   <script src="js/export.js"></script>
+  <script src="js/activation-icons.js"></script>
+  <script src="js/pdf-extractor.js"></script>
   <script src="js/app.js"></script>
 
 </body>

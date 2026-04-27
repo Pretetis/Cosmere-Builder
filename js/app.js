@@ -10,7 +10,7 @@ const App = (() => {
   const WHEEL_ORDERS = [
     'Vinculadores',
     'Corredor dos Ventos', 'Rompe-Céu', 'Pulverizador',
-    'Dançarino dos Precipícios', 'Sentinela da Verdade',
+    'Dançarino de Precipícios', 'Sentinela da Verdade',
     'Teceluz', 'Alternauta', 'Plasmador', 'Guardião das Pedras',
   ];
 
@@ -36,7 +36,7 @@ const App = (() => {
     'Corredor dos Ventos':       'svg/Windrunners_glyph.svg',
     'Rompe-Céu':                 'svg/Skybreakers_glyph.svg',
     'Pulverizador':              'svg/Dustbringers_glyph.svg',
-    'Dançarino dos Precipícios': 'svg/Edgedancers_glyph.svg',
+    'Dançarino de Precipícios': 'svg/Edgedancers_glyph.svg',
     'Sentinela da Verdade':      'svg/Truthwatchers_glyph.svg',
     'Teceluz':                   'svg/Lightweavers_glyph.svg',
     'Alternauta':                'svg/elsecallers_glyph.svg',
@@ -709,9 +709,10 @@ const App = (() => {
         </div>
 
         <div class="modal-body">
+          ${skill.activation ? `<div class="modal-activation">${ActivationIcons.badge(skill.activation)}</div>` : ''}
           <div class="modal-desc-section">
-            <div class="modal-desc-label">Descricao</div>
-            <div class="modal-desc-text">${skill.description || '<em>Descricao sera adicionada em breve.</em>'}</div>
+            <div class="modal-desc-label">Descrição</div>
+            <div class="modal-desc-text">${skill.description || '<em style="color:var(--text-muted);font-size:12px;">Carregue o livro em PDF na barra lateral para ver a descrição completa.</em>'}</div>
           </div>
 
           ${reqHtml ? `<div class="modal-req-section"><div class="modal-desc-label">Requisitos</div>${reqHtml}</div>` : ''}
@@ -1959,7 +1960,11 @@ const App = (() => {
     tt.innerHTML = `
       <div class="tt-name" style="color: ${clsColor(skill.cls)}">${skill.name}</div>
       <div class="tt-sub">${skill.cls}${skill.sub !== '-' ? ' -- ' + skill.sub : ''} ${statusText}</div>
-      <div class="tt-rank">Rank ${skill.rank}</div>
+      <div class="tt-meta-row">
+        <span class="tt-rank">Rank ${skill.rank}</span>
+        ${skill.activation ? ActivationIcons.icon(skill.activation) : ''}
+      </div>
+      ${skill.desc ? `<div class="tt-desc">${skill.desc}</div>` : ''}
       ${reqLines ? '<div class="tt-reqs">' + reqLines + '</div>' : ''}
       <div class="tt-hint">Clique para detalhes</div>
     `;
@@ -2045,7 +2050,7 @@ const App = (() => {
     'Corredor dos Ventos':       '#38bdf8',
     'Rompe-Céu':                 '#fbbf24',
     'Pulverizador':              '#ef4444',
-    'Dançarino dos Precipícios': '#34d399',
+    'Dançarino de Precipícios': '#34d399',
     'Sentinela da Verdade':      '#2dd4bf',
     'Teceluz':                   '#f0abfc',
     'Alternauta':                '#e2e8f0',
@@ -2595,6 +2600,22 @@ const App = (() => {
     rebuildTree();
   }
 
+  // ---- BOOK PDF UI STATE ----
+  function updateBookPdfUI() {
+    const btnBook    = document.getElementById('btn-load-book');
+    const btnClear   = document.getElementById('btn-clear-book');
+    const bookStatus = document.getElementById('book-pdf-status');
+    if (!btnBook) return;
+
+    const hasDesc = PdfExtractor.hasStoredDescriptions();
+    btnBook.textContent            = hasDesc ? 'Recarregar Livro (PDF)' : 'Carregar Livro (PDF)';
+    btnClear.style.display         = hasDesc ? 'inline-block' : 'none';
+    if (!hasDesc) {
+      bookStatus.style.display = 'none';
+      bookStatus.textContent   = '';
+    }
+  }
+
   // ---- INIT (async - waits for skills JSON) ----
   async function init() {
     // Fechar sidebar ANTES dos awaits — garante estado correto no mobile
@@ -2609,6 +2630,8 @@ const App = (() => {
     await CosData.loadRadiantSkills();
     await CosData.loadAdditionalSkills();
     await CosData.loadOaths();
+    PdfExtractor.loadAndApply();
+    updateBookPdfUI();
     preloadWheelSvgs(); // fire-and-forget — wheel opens instantly later
 
     initPericias();
@@ -2794,6 +2817,41 @@ const App = (() => {
     document.getElementById('btn-load')?.addEventListener('click', () => SavesManager.showSavesModal());
     document.getElementById('btn-import-pdf')?.addEventListener('click', importFromPDF);
     document.getElementById('btn-reset')?.addEventListener('click', resetProfile);
+
+    // ---- CARREGAR LIVRO PDF ----
+    const bookInput  = document.getElementById('book-pdf-input');
+    const btnBook    = document.getElementById('btn-load-book');
+    const btnClear   = document.getElementById('btn-clear-book');
+    const bookStatus = document.getElementById('book-pdf-status');
+
+    btnBook?.addEventListener('click', () => bookInput?.click());
+
+    bookInput?.addEventListener('change', async () => {
+      const file = bookInput.files?.[0];
+      if (!file) return;
+      bookInput.value = '';
+
+      btnBook.disabled = true;
+      bookStatus.style.display = 'block';
+
+      try {
+        const { found, total } = await PdfExtractor.processFile(file, msg => {
+          bookStatus.textContent = msg;
+        });
+        bookStatus.textContent = `${found} de ${total} habilidades com descrição encontrada.`;
+      } catch (err) {
+        bookStatus.textContent = `Erro: ${err.message}`;
+      } finally {
+        btnBook.disabled = false;
+        updateBookPdfUI();
+      }
+    });
+
+    btnClear?.addEventListener('click', () => {
+      if (!confirm('Remover as descrições carregadas do livro?')) return;
+      PdfExtractor.clearDescriptions();
+      updateBookPdfUI();
+    });
     // Radiant wheel close button + backdrop (Escape key)
     document.getElementById('radiant-wheel-close')?.addEventListener('click', hideRadiantWheel);
     document.getElementById('radiant-wheel')?.addEventListener('click', e => {
