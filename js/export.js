@@ -312,14 +312,57 @@ const PdfExport = (() => {
     const W = 595, H = 842;
     const page = pdfDoc.addPage([W, H]);
 
-    page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) });
+    // 1. Fundo da Página (Um tom bem leve de off-white/pergaminho)
+    page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(0.99, 0.98, 0.96) });
 
-    const titleTxt = `MAPA — ${state.profile.name || 'Personagem'}  ·  Nível ${state.profile.level}`;
-    const tw = fontBold.widthOfTextAtSize(titleTxt, 10);
-    page.drawText(titleTxt, { x: W/2 - tw/2, y: H - 21, size: 10,
-      font: fontBold, color: rgb(0.83, 0.66, 0.33) });
+    // 2. Cores base da identidade visual
+    const goldColor = rgb(0.83, 0.66, 0.33); // Dourado que você já usava
+    const margin = 20;
+    const innerM = margin + 4; // Borda interna
 
-    const chartCy = H - 115;
+    // 3. Bordas Decorativas (Estilo Fantasia)
+    // Borda Externa Grossa
+    page.drawRectangle({
+      x: margin, y: margin, width: W - margin * 2, height: H - margin * 2,
+      borderColor: goldColor, borderWidth: 1.5,
+    });
+
+    // Borda Interna Fina (cria um efeito de linha dupla muito elegante)
+    page.drawRectangle({
+      x: innerM, y: innerM, width: W - innerM * 2, height: H - innerM * 2,
+      borderColor: goldColor, borderWidth: 0.5,
+    });
+
+    // Detalhes nos cantos (Pequenos diamantes desenhados com SVG Path)
+    const drawDiamond = (cx, cy, size) => {
+      page.drawSvgPath(`M ${cx} ${cy-size} L ${cx+size} ${cy} L ${cx} ${cy+size} L ${cx-size} ${cy} Z`, {
+        color: goldColor
+      });
+    };
+    drawDiamond(innerM, innerM, 4);           // Inferior esquerdo
+    drawDiamond(W - innerM, innerM, 4);       // Inferior direito
+    drawDiamond(innerM, H - innerM, 4);       // Superior esquerdo
+    drawDiamond(W - innerM, H - innerM, 4);   // Superior direito
+
+    // 4. Cabeçalho Centralizado
+    const titleTxt = `MAPA DE ATRIBUTOS E HABILIDADES`;
+    const subtitleTxt = `${state.profile.name || 'Personagem'}  ·  Nível ${state.profile.level}  ·  ${state.profile.radiantClass || 'Mundano'}`;
+
+    const tw = fontBold.widthOfTextAtSize(titleTxt, 14);
+    page.drawText(titleTxt, { x: W/2 - tw/2, y: H - 55, size: 14, font: fontBold, color: goldColor });
+
+    const sw = font.widthOfTextAtSize(subtitleTxt, 10);
+    page.drawText(subtitleTxt, { x: W/2 - sw/2, y: H - 70, size: 10, font: font, color: rgb(0.4, 0.4, 0.4) });
+
+    // Linha divisória logo abaixo do cabeçalho
+    page.drawLine({
+      start: { x: W/2 - 150, y: H - 85 },
+      end:   { x: W/2 + 150, y: H - 85 },
+      color: goldColor, thickness: 0.5, opacity: 0.7
+    });
+
+    // 5. Gráficos de Radar
+    const chartCy = H - 170; // Movido um pouco para baixo para respeitar as margens
     const chartR  = 80;
 
     const attrLabels = ['FOR','VEL','INT','VON','CON','PRE'];
@@ -328,7 +371,7 @@ const PdfExport = (() => {
       state.attributes.intelecto,   state.attributes.vontade,
       state.attributes.consciencia, state.attributes.presenca,
     ];
-    _drawRadarPdf(page, 148, chartCy, chartR, attrLabels, attrVals, 10,
+    _drawRadarPdf(page, 150, chartCy, chartR, attrLabels, attrVals, 10,
       [0.24, 0.61, 0.89], font, fontBold, 'ATRIBUTOS');
 
     const allSkillsForPdf = [...CosData.SKILLS, ...(CosData.RADIANT_SKILLS || [])];
@@ -342,16 +385,22 @@ const PdfExport = (() => {
     if (state.profile.radiantClass) trackClasses.push(state.profile.radiantClass);
     const trackLabels = trackClasses.map(c => _PDF_CLASS_ABBREV[c] || c.slice(0,3).toUpperCase());
     const trackVals   = trackClasses.map(c => ((clsUnlocked[c]||0) / (clsTotal[c]||1)) * 10);
-    _drawRadarPdf(page, 447, chartCy, chartR, trackLabels, trackVals, 10,
+    
+    _drawRadarPdf(page, 445, chartCy, chartR, trackLabels, trackVals, 10,
       [0.83, 0.66, 0.33], font, fontBold, 'TRILHAS HERÓICAS');
 
-    // const mapAreaH = H - 210 - 22;
-    // const mapCy    = 22 + mapAreaH * 0.48;
-    // const mapR     = Math.min(W/2 - 35, mapAreaH/2 - 25);
-    // _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold, state);
-    const mapAreaH = H - 210 - 22;
-    const mapCy    = 22 + mapAreaH * 0.48;
-    const mapR     = Math.min(W/2 - 35, mapAreaH/2 - 25);
+    // Linha separadora sutil entre Radares e o Mapa
+    page.drawLine({
+      start: { x: W/2 - 80, y: chartCy - chartR - 20 },
+      end:   { x: W/2 + 80, y: chartCy - chartR - 20 },
+      color: goldColor, thickness: 0.5, opacity: 0.4
+    });
+
+    // 6. Mapa de Habilidades (Panorâmico)
+    // Calcula a altura restante da página subtraindo cabeçalho, radares e margens
+    const mapAreaH = (chartCy - chartR - 20) - margin; 
+    const mapCy    = margin + mapAreaH * 0.48; // Centraliza a mandala verticalmente
+    const mapR     = Math.min((W - margin*2)/2 - 20, mapAreaH/2 - 15);
     
     const radiantClass = state.profile.radiantClass;
     let svgUrl = 'svg/Cosmere_symbol.svg';
@@ -373,7 +422,7 @@ const PdfExport = (() => {
       console.warn("Não foi possível processar o Símbolo Central pro PDF", e);
     }
 
-    // Chama o construtor do mapa passando a centerImage processada
+    // Desenha o mapa
     _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold, state, centerImage);
   }
 

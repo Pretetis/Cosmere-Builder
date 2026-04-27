@@ -577,17 +577,20 @@ const App = (() => {
 
       // Animações de ideal radiante
       if (radiant) {
-        const IDEAL_NAMES = ['Segundo Ideal', 'Terceiro Ideal', 'Quarto Ideal'];
-        if (IDEAL_NAMES.includes(skill.name)) {
+        const isSegundo = skill.name.includes('Segundo Ideal');
+        const isTerceiro = skill.name.includes('Terceiro Ideal');
+        const isQuarto = skill.name.includes('Quarto Ideal');
+
+        if (isSegundo || isTerceiro || isQuarto) {
           const cls   = state.profile.radiantClass;
 
           // Auto-grant de surto bloqueado pelo Cânone ao atingir o ideal que o libera
           if (cls === 'Pulverizador' && state.profile.pulverizadorCanone === true) {
-            if (skill.name === 'Segundo Ideal') state.radiantPericias['divisao'] = 1;
+            if (isSegundo) state.radiantPericias['divisao'] = 1;
           }
           if (cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
-            if (skill.name === 'Segundo Ideal') state.radiantPericias['gravitacao'] = 1;
-            if (skill.name === 'Terceiro Ideal') state.radiantPericias['divisao'] = 1;
+            if (isSegundo) state.radiantPericias['gravitacao'] = 1;
+            if (isTerceiro) state.radiantPericias['divisao'] = 1;
           }
 
           const color = clsColor(cls) || '#d4a853';
@@ -595,7 +598,7 @@ const App = (() => {
           const glyphSrc = coloredSvgSrc(svgText, color) || (WHEEL_SVG_MAP[cls] || '');
 
           const isTeceluz = cls === 'Teceluz';
-          const isQuarto  = skill.name === 'Quarto Ideal';
+          // const isQuarto  = skill.name === 'Quarto Ideal';
           const needsPersonalOath = isQuarto || isTeceluz;
 
           if (needsPersonalOath) {
@@ -604,7 +607,8 @@ const App = (() => {
             state.profile.radiantOaths[skill.name] = text;
           } else {
             const oathData = CosData.getOathData(cls);
-            const oathKey  = skill.name === 'Segundo Ideal' ? '2_oath' : '3_oath';
+            //const oathKey  = skill.name === 'Segundo Ideal' ? '2_oath' : '3_oath';
+            const oathKey  = isSegundo ? '2_oath' : '3_oath';
             const phrase   = oathData && oathData[oathKey] ? oathData[oathKey] : null;
             await _showOathAnimation(cls, color, glyphSrc, phrase ? [phrase] : null);
           }
@@ -2072,17 +2076,17 @@ const App = (() => {
     const cls = state.profile.radiantClass;
     if (cls === 'Pulverizador' && state.profile.pulverizadorCanone === true) {
       if (key === 'divisao') {
-        const seg = CosData.findRadiantSkillByName('Segundo Ideal', 'Pulverizador');
+        const seg = CosData.findRadiantSkillByName('Segundo Ideal (Pulverizador)', 'Pulverizador');
         return !seg || !state.unlockedSkills.has(seg.id);
       }
     }
     if (cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
       if (key === 'gravitacao') {
-        const seg = CosData.findRadiantSkillByName('Segundo Ideal', 'Rompe-Céu');
+        const seg = CosData.findRadiantSkillByName('Segundo Ideal (Rompe-Céu)', 'Rompe-Céu');
         return !seg || !state.unlockedSkills.has(seg.id);
       }
       if (key === 'divisao') {
-        const ter = CosData.findRadiantSkillByName('Terceiro Ideal', 'Rompe-Céu');
+        const ter = CosData.findRadiantSkillByName('Terceiro Ideal (Rompe-Céu)', 'Rompe-Céu');
         return !ter || !state.unlockedSkills.has(ter.id);
       }
     }
@@ -2095,7 +2099,7 @@ const App = (() => {
 
     // Restrição do Cânone — Pulverizador: Divisão bloqueada até o Segundo Ideal
     if (skill.cls === 'Pulverizador' && skill.sub === 'Divisão' && state.profile.pulverizadorCanone === true) {
-      const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal', 'Pulverizador');
+      const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal (Pulverizador)', 'Pulverizador');
       if (!segundoIdeal || !state.unlockedSkills.has(segundoIdeal.id)) {
         return { can: false, reason: 'Requer Segundo Ideal (restrição do Cânone)' };
       }
@@ -2104,8 +2108,8 @@ const App = (() => {
     // Restrição do Cânone — Rompe-Céu: surges bloqueadas por ideal
     if (skill.cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
       if (skill.sub === 'Gravitação' || skill.sub === 'Divisão') {
-        const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal', 'Rompe-Céu');
-        const terceiroIdeal = CosData.findRadiantSkillByName('Terceiro Ideal', 'Rompe-Céu');
+        const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal (Rompe-Céu)', 'Rompe-Céu');
+        const terceiroIdeal = CosData.findRadiantSkillByName('Terceiro Ideal (Rompe-Céu)', 'Rompe-Céu');
         const temSegundo = segundoIdeal && state.unlockedSkills.has(segundoIdeal.id);
         const temTerceiro = terceiroIdeal && state.unlockedSkills.has(terceiroIdeal.id);
 
