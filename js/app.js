@@ -2240,7 +2240,7 @@ const App = (() => {
   // ---- IMPORT FROM PDF ----
   async function importFromPDF() {
     if (typeof PDFLib === 'undefined') {
-      notify('pdf-lib não carregado. Abra via start.bat');
+      notify('pdf-lib não carregado. Recarregue a página e tente novamente.');
       return;
     }
 

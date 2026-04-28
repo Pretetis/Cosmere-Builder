@@ -570,7 +570,7 @@ const PdfExport = (() => {
 
     if (typeof PDFLib === 'undefined') {
       console.error('[Sheet] PDFLib não carregado!');
-      alert('pdf-lib não carregado. Abra o site via servidor local (start.bat), não direto pelo arquivo.');
+      alert('pdf-lib não carregado. Recarregue a página — pode ser um problema de rede ao buscar a biblioteca.');
       return;
     }
     console.log('[Sheet] PDFLib OK');
