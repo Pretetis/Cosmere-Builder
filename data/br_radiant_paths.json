@@ -106,120 +106,120 @@
     "Alternauta": {
       "surges": ["Transformação", "Transporte"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Alternaulta)",            "deps": [],                                    "reqStat": "level",                         "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Alternaulta)",             "deps": ["Primeiro Ideal (Talento Chave de Alternaulta)"],                    "reqStat": "level",                         "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Alternaulta)",            "deps": ["Segundo Ideal (Alternaulta)"],                     "reqStat": "level",                         "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Alternaulta)",              "deps": ["Terceiro Ideal (Alternaulta)"],                    "reqStat": "level",                         "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Perspicácia do Alternauta", "deps": ["Primeiro Ideal (Talento Chave de Alternaulta)"],                    "reqStat": ["Transformacao", "Transporte"],  "reqVal": [2, 2] },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",                 "deps": ["Perspicácia do Alternauta"],         "reqStat": null,                            "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida",     "deps": ["Investido"],                         "reqStat": null,                            "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",       "deps": ["Terceiro Ideal (Alternaulta)"],                    "reqStat": null,                            "reqVal": 3  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Alternaulta)",           "deps": ["Terceiro Ideal (Alternaulta)"],                    "reqStat": null,                            "reqVal": 3  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Alternaulta)", "deps": [                                               ], "reqStat": "level",                         "reqVal": 2      },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Alternaulta)",                   "deps": ["Primeiro Ideal (Talento Chave de Alternaulta)"], "reqStat": "level",                         "reqVal": 4      },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Alternaulta)",                  "deps": ["Segundo Ideal (Alternaulta)"                  ], "reqStat": "level",                         "reqVal": 8      },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Alternaulta)",                    "deps": ["Terceiro Ideal (Alternaulta)"                 ], "reqStat": "level",                         "reqVal": 13     },
+        { "sub": "Vínculo", "rank": 2, "name": "Perspicácia do Alternauta",                     "deps": ["Primeiro Ideal (Talento Chave de Alternaulta)"], "reqStat": ["Transformacao", "Transporte"], "reqVal": [2, 2] },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                     "deps": ["Perspicácia do Alternauta"                    ], "reqStat": null,                            "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida",                         "deps": ["Investido"                                    ], "reqStat": null,                            "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                           "deps": ["Terceiro Ideal (Alternaulta)"                 ], "reqStat": null,                            "reqVal": 3      },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Alternaulta)",                 "deps": ["Terceiro Ideal (Alternaulta)"                 ], "reqStat": null,                            "reqVal": 3      }
       ]
     },
 
     "Corredor dos Ventos": {
       "surges": ["Adesão", "Gravitação"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Corredor dos Ventos)",        "deps": [],                  "reqStat": "level", "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Corredor dos Ventos)",         "deps": ["Primeiro Ideal (Talento Chave de Corredor dos Ventos)"],  "reqStat": "level", "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Corredor dos Ventos)",        "deps": ["Segundo Ideal (Corredor dos Ventos)"],   "reqStat": "level", "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Corredor dos Ventos)",          "deps": ["Terceiro Ideal (Corredor dos Ventos)"],  "reqStat": "level", "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Projeção Reversa",      "deps": ["Primeiro Ideal (Talento Chave de Corredor dos Ventos)"],  "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",             "deps": ["Projeção Reversa"],"reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida", "deps": ["Investido"],       "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Corredor dos Ventos)"],  "reqStat": null,    "reqVal": 3  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Corredor dos Ventos)",       "deps": ["Terceiro Ideal (Corredor dos Ventos)"],  "reqStat": null,    "reqVal": 3  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Corredor dos Ventos)", "deps": [                                                       ], "reqStat": "level", "reqVal":  2 },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Corredor dos Ventos)",                   "deps": ["Primeiro Ideal (Talento Chave de Corredor dos Ventos)"], "reqStat": "level", "reqVal":  4 },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Corredor dos Ventos)",                  "deps": ["Segundo Ideal (Corredor dos Ventos)"                  ], "reqStat": "level", "reqVal":  8 },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Corredor dos Ventos)",                    "deps": ["Terceiro Ideal (Corredor dos Ventos)"                 ], "reqStat": "level", "reqVal": 13 },
+        { "sub": "Vínculo", "rank": 2, "name": "Projeção Reversa",                                      "deps": ["Primeiro Ideal (Talento Chave de Corredor dos Ventos)"], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                             "deps": ["Projeção Reversa"                                     ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida",                                 "deps": ["Investido"                                            ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                                   "deps": ["Terceiro Ideal (Corredor dos Ventos)"                 ], "reqStat": null,    "reqVal":  3 },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Corredor dos Ventos)",                 "deps": ["Terceiro Ideal (Corredor dos Ventos)"                 ], "reqStat": null,    "reqVal":  3 }
       ]
     },
 
     "Dançarino de Precipícios": {
       "surges": ["Abrasão", "Progressão"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Dançarino de Precipícios)",                "deps": [],                                               "reqStat": "level",                   "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Dançarino de Precipícios)",                  "deps": ["Primeiro Ideal (Talento Chave de Dançarino de Precipícios)"], "reqStat": "level",                   "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Dançarino de Precipícios)",                 "deps": ["Segundo Ideal (Dançarino de Precipícios)"],                    "reqStat": "level",                   "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Dançarino de Precipícios)",                   "deps": ["Terceiro Ideal (Dançarino de Precipícios)"],                   "reqStat": "level",                   "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Graça do Dançarino de Precipícios", "deps": ["Primeiro Ideal (Talento Chave de Dançarino de Precipícios)"],  "reqStat": ["Abrasao", "progressao"], "reqVal": [2, 2] },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",                         "deps": ["Graça do Dançarino de Precipícios"],                             "reqStat": null,                      "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",             "deps": ["Investido"],                                                    "reqStat": null,                      "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",               "deps": ["Terceiro Ideal (Dançarino de Precipícios)"],                   "reqStat": null,                      "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Dançarino de Precipícios)",                "deps": ["Terceiro Ideal (Dançarino de Precipícios)"],                   "reqStat": null,                      "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Dançarino de Precipícios)", "deps": [                                                            ], "reqStat": "level",                   "reqVal": 2      },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Dançarino de Precipícios)",                   "deps": ["Primeiro Ideal (Talento Chave de Dançarino de Precipícios)"], "reqStat": "level",                   "reqVal": 4      },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Dançarino de Precipícios)",                  "deps": ["Segundo Ideal (Dançarino de Precipícios)"                  ], "reqStat": "level",                   "reqVal": 8      },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Dançarino de Precipícios)",                    "deps": ["Terceiro Ideal (Dançarino de Precipícios)"                 ], "reqStat": "level",                   "reqVal": 13     },
+        { "sub": "Vínculo", "rank": 2, "name": "Graça do Dançarino de Precipícios",                          "deps": ["Primeiro Ideal (Talento Chave de Dançarino de Precipícios)"], "reqStat": ["Abrasao", "progressao"], "reqVal": [2, 2] },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                                  "deps": ["Graça do Dançarino de Precipícios"                         ], "reqStat": null,                      "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                                      "deps": ["Investido"                                                 ], "reqStat": null,                      "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                                        "deps": ["Terceiro Ideal (Dançarino de Precipícios)"                 ], "reqStat": null,                      "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Dançarino de Precipícios)",                 "deps": ["Terceiro Ideal (Dançarino de Precipícios)"                 ], "reqStat": null,                      "reqVal": 0      }
       ]
     },
 
     "Guardião das Pedras": {
       "surges": ["Coesão", "Tensão"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Guardião das Pedras)",        "deps": [],                               "reqStat": "level",             "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Guardião das Pedras)",         "deps": ["Primeiro Ideal (Talento Chave de Guardião das Pedras)"],               "reqStat": "level",             "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Guardião das Pedras)",        "deps": ["Segundo Ideal (Guardião das Pedras)"],                "reqStat": "level",             "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Guardião das Pedras)",          "deps": ["Terceiro Ideal (Guardião das Pedras)"],               "reqStat": "level",             "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 1, "name": "Trabalho em Equipe Coeso","deps": ["Primeiro Ideal (Talento Chave Guardião das Pedras)"],             "reqStat": ["Coesao", "Tensao"],"reqVal": [2, 2] },
-        { "sub": "Vínculo", "rank": 2, "name": "Investido",             "deps": ["Trabalho em Equipe Coeso"],     "reqStat": null,                "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida", "deps": ["Investido"],                    "reqStat": null,                "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Guardião das Pedras)"],               "reqStat": null,                "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Guardião das Pedras)",       "deps": ["Terceiro Ideal (Guardião das Pedras)"],               "reqStat": null,                "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Guardião das Pedras)", "deps": [                                                       ], "reqStat": "level",              "reqVal": 2      },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Guardião das Pedras)",                   "deps": ["Primeiro Ideal (Talento Chave de Guardião das Pedras)"], "reqStat": "level",              "reqVal": 4      },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Guardião das Pedras)",                  "deps": ["Segundo Ideal (Guardião das Pedras)"                  ], "reqStat": "level",              "reqVal": 8      },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Guardião das Pedras)",                    "deps": ["Terceiro Ideal (Guardião das Pedras)"                 ], "reqStat": "level",              "reqVal": 13     },
+        { "sub": "Vínculo", "rank": 1, "name": "Trabalho em Equipe Coeso",                              "deps": ["Primeiro Ideal (Talento Chave Guardião das Pedras)"   ], "reqStat": ["Coesao", "Tensao"], "reqVal": [2, 2] },
+        { "sub": "Vínculo", "rank": 2, "name": "Investido",                                             "deps": ["Trabalho em Equipe Coeso"                             ], "reqStat": null,                 "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                                 "deps": ["Investido"                                            ], "reqStat": null,                 "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                                   "deps": ["Terceiro Ideal (Guardião das Pedras)"                 ], "reqStat": null,                 "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Guardião das Pedras)",                 "deps": ["Terceiro Ideal (Guardião das Pedras)"                 ], "reqStat": null,                 "reqVal": 0      }
       ]
     },
 
     "Plasmador": {
       "surges": ["Transporte", "Coesão"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Plasmador)",        "deps": [],                      "reqStat": "level", "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Plasmador)",         "deps": ["Primeiro Ideal (Talento Chave de Plasmador)"],      "reqStat": "level", "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Plasmador)",        "deps": ["Segundo Ideal (Plasmador)"],       "reqStat": "level", "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Plasmador)",          "deps": ["Terceiro Ideal (Plasmador)"],      "reqStat": "level", "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 1, "name": "Coesão Espiritual",     "deps": ["Primeiro Ideal (Talento Chave de Plasmador)"],      "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 2, "name": "Investido",             "deps": ["Coesão Espiritual"],   "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida", "deps": ["Investido"],           "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Plasmador)"],      "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Plasmador)",       "deps": ["Terceiro Ideal (Plasmador)"],      "reqStat": null,    "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Plasmador)", "deps": [                                             ], "reqStat": "level", "reqVal":  2 },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Plasmador)",                   "deps": ["Primeiro Ideal (Talento Chave de Plasmador)"], "reqStat": "level", "reqVal":  4 },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Plasmador)",                  "deps": ["Segundo Ideal (Plasmador)"                  ], "reqStat": "level", "reqVal":  8 },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Plasmador)",                    "deps": ["Terceiro Ideal (Plasmador)"                 ], "reqStat": "level", "reqVal": 13 },
+        { "sub": "Vínculo", "rank": 1, "name": "Coesão Espiritual",                           "deps": ["Primeiro Ideal (Talento Chave de Plasmador)"], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 2, "name": "Investido",                                   "deps": ["Coesão Espiritual"                          ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                       "deps": ["Investido"                                  ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                         "deps": ["Terceiro Ideal (Plasmador)"                 ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Plasmador)",                 "deps": ["Terceiro Ideal (Plasmador)"                 ], "reqStat": null,    "reqVal":  0 }
       ]
     },
 
     "Pulverizador": {
       "surges": ["Divisão", "Abrasão"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Pulverizador)",              "deps": [],                              "reqStat": "level", "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Pulverizador)",               "deps": ["Primeiro Ideal (Talento Chave de Pulverizador)"],              "reqStat": "level", "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Pulverizador)",              "deps": ["Segundo Ideal (Pulverizador)"],               "reqStat": "level", "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Pulverizador)",                "deps": ["Terceiro Ideal (Pulverizador)"],              "reqStat": "level", "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Tempestade de Poeira Ardente","deps": ["Primeiro Ideal (Talento Chave de Pulverizador)"],              "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",                   "deps": ["Tempestade de Poeira Ardente"],"reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",       "deps": ["Investido"],                   "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",         "deps": ["Terceiro Ideal (Pulverizador)"],              "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Pulverizador)",             "deps": ["Terceiro Ideal (Pulverizador)"],              "reqStat": null,    "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Pulverizador)", "deps": [                                                ], "reqStat": "level", "reqVal":  2 },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Pulverizador)",                   "deps": ["Primeiro Ideal (Talento Chave de Pulverizador)"], "reqStat": "level", "reqVal":  4 },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Pulverizador)",                  "deps": ["Segundo Ideal (Pulverizador)"                  ], "reqStat": "level", "reqVal":  8 },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Pulverizador)",                    "deps": ["Terceiro Ideal (Pulverizador)"                 ], "reqStat": "level", "reqVal": 13 },
+        { "sub": "Vínculo", "rank": 2, "name": "Tempestade de Poeira Ardente",                   "deps": ["Primeiro Ideal (Talento Chave de Pulverizador)"], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                      "deps": ["Tempestade de Poeira Ardente"                  ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                          "deps": ["Investido"                                     ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                            "deps": ["Terceiro Ideal (Pulverizador)"                 ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Pulverizador)",                 "deps": ["Terceiro Ideal (Pulverizador)"                 ], "reqStat": null,    "reqVal":  0 }
       ]
     },
 
     "Rompe-Céu": {
       "surges": ["Divisão", "Gravitação"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Rompe-Céu)",        "deps": [],                    "reqStat": "level", "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Rompe-Céu)",         "deps": ["Primeiro Ideal (Talento Chave de Rompe-Céu)"],    "reqStat": "level", "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Rompe-Céu)",        "deps": ["Segundo Ideal (Rompe-Céu)"],     "reqStat": "level", "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Rompe-Céu)",          "deps": ["Terceiro Ideal (Rompe-Céu)"],    "reqStat": "level", "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Destruição Elevada",    "deps": ["Primeiro Ideal (Talento Chave de Rompe-Céu)"],    "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",             "deps": ["Destruição Elevada"],"reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida", "deps": ["Investido"],         "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Rompe-Céu)"],    "reqStat": null,    "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Rompe-Céu)",       "deps": ["Terceiro Ideal (Rompe-Céu)"],    "reqStat": null,    "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Rompe-Céu)", "deps": [                                             ], "reqStat": "level", "reqVal":  2 },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Rompe-Céu)",                   "deps": ["Primeiro Ideal (Talento Chave de Rompe-Céu)"], "reqStat": "level", "reqVal":  4 },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Rompe-Céu)",                  "deps": ["Segundo Ideal (Rompe-Céu)"                  ], "reqStat": "level", "reqVal":  8 },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Rompe-Céu)",                    "deps": ["Terceiro Ideal (Rompe-Céu)"                 ], "reqStat": "level", "reqVal": 13 },
+        { "sub": "Vínculo", "rank": 2, "name": "Destruição Elevada",                          "deps": ["Primeiro Ideal (Talento Chave de Rompe-Céu)"], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                   "deps": ["Destruição Elevada"                         ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Restauração de Ferida",                       "deps": ["Investido"                                  ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                         "deps": ["Terceiro Ideal (Rompe-Céu)"                 ], "reqStat": null,    "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Rompe-Céu)",                 "deps": ["Terceiro Ideal (Rompe-Céu)"                 ], "reqStat": null,    "reqVal":  0 }
       ]
     },
 
     "Sentinela da Verdade": {
       "surges": ["Iluminação", "Progressão"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Sentinela da Verdade)",        "deps": [],                    "reqStat": "level",                       "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Sentinela da Verdade)",         "deps": ["Primeiro Ideal (Talento Chave de Sentinela da Verdade)"],    "reqStat": "level",                       "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Sentinela da Verdade)",        "deps": ["Segundo Ideal (Sentinela da Verdade)"],     "reqStat": "level",                       "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Sentinela da Verdade)",          "deps": ["Terceiro Ideal (Sentinela da Verdade)"],    "reqStat": "level",                       "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Cura Espiritual",       "deps": ["Primeiro Ideal (Talento Chave de Sentinela da Verdade)"],    "reqStat": ["Iluminacao", "Progressao"],   "reqVal": [2, 2] },
-        { "sub": "Vínculo", "rank": 3, "name": "Investido",             "deps": ["Cura Espiritual"],   "reqStat": null,                          "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida", "deps": ["Investido"],         "reqStat": null,                          "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Sentinela da Verdade)"],    "reqStat": null,                          "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Sentinela da Verdade)",       "deps": ["Terceiro Ideal (Sentinela da Verdade)"],    "reqStat": null,                          "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Sentinela da Verdade)", "deps": [                                                        ], "reqStat": "level",                      "reqVal": 2      },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Sentinela da Verdade)",                   "deps": ["Primeiro Ideal (Talento Chave de Sentinela da Verdade)"], "reqStat": "level",                      "reqVal": 4      },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Sentinela da Verdade)",                  "deps": ["Segundo Ideal (Sentinela da Verdade)"                  ], "reqStat": "level",                      "reqVal": 8      },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Sentinela da Verdade)",                    "deps": ["Terceiro Ideal (Sentinela da Verdade)"                 ], "reqStat": "level",                      "reqVal": 13     },
+        { "sub": "Vínculo", "rank": 2, "name": "Cura Espiritual",                                        "deps": ["Primeiro Ideal (Talento Chave de Sentinela da Verdade)"], "reqStat": ["Iluminacao", "Progressao"], "reqVal": [2, 2] },
+        { "sub": "Vínculo", "rank": 3, "name": "Investido",                                              "deps": ["Cura Espiritual"                                       ], "reqStat": null,                         "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                                  "deps": ["Investido"                                             ], "reqStat": null,                         "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                                    "deps": ["Terceiro Ideal (Sentinela da Verdade)"                 ], "reqStat": null,                         "reqVal": 0      },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Sentinela da Verdade)",                 "deps": ["Terceiro Ideal (Sentinela da Verdade)"                 ], "reqStat": null,                         "reqVal": 0      }
       ],
       "overrides": [
         { "surge": "Progressão", "name": "Fonte de Vida", "deps": ["Regeneração Estendida", "Progressão Confiável"] }
@@ -229,15 +229,15 @@
     "Teceluz": {
       "surges": ["Iluminação", "Transformação"],
       "bond": [
-        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Teceluz)",        "deps": [],                          "reqStat": "level",        "reqVal": 2  },
-        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Teceluz)",         "deps": ["Primeiro Ideal (Talento Chave de Teceluz)"],          "reqStat": "level",        "reqVal": 4  },
-        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Teceluz)",        "deps": ["Segundo Ideal (Teceluz)"],           "reqStat": "level",        "reqVal": 8  },
-        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Teceluz)",          "deps": ["Terceiro Ideal (Teceluz)"],          "reqStat": "level",        "reqVal": 13 },
-        { "sub": "Vínculo", "rank": 2, "name": "Investido",             "deps": ["Primeiro Ideal (Talento Chave de Teceluz)"],          "reqStat": null,           "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida", "deps": ["Investido"],               "reqStat": null,           "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 3, "name": "Ilusão Física",         "deps": ["Restauração de Ferida"],   "reqStat": "Quarto Ideal (Teceluz)", "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",   "deps": ["Terceiro Ideal (Teceluz)"],          "reqStat": null,           "reqVal": 0  },
-        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Teceluz)",       "deps": ["Terceiro Ideal (Teceluz)"],          "reqStat": null,           "reqVal": 0  }
+        { "sub": "-",       "rank": 0, "name": "Primeiro Ideal (Talento Chave de Teceluz)", "deps": [                                           ], "reqStat": "level",                  "reqVal":  2 },
+        { "sub": "Vínculo", "rank": 1, "name": "Segundo Ideal (Teceluz)",                   "deps": ["Primeiro Ideal (Talento Chave de Teceluz)"], "reqStat": "level",                  "reqVal":  4 },
+        { "sub": "Vínculo", "rank": 2, "name": "Terceiro Ideal (Teceluz)",                  "deps": ["Segundo Ideal (Teceluz)"                  ], "reqStat": "level",                  "reqVal":  8 },
+        { "sub": "Vínculo", "rank": 3, "name": "Quarto Ideal (Teceluz)",                    "deps": ["Terceiro Ideal (Teceluz)"                 ], "reqStat": "level",                  "reqVal": 13 },
+        { "sub": "Vínculo", "rank": 2, "name": "Investido",                                 "deps": ["Primeiro Ideal (Talento Chave de Teceluz)"], "reqStat": null,                     "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Restauração de Ferida",                     "deps": ["Investido"                                ], "reqStat": null,                     "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 3, "name": "Ilusão Física",                             "deps": ["Restauração de Ferida"                    ], "reqStat": "Quarto Ideal (Teceluz)", "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Vínculo Aprofundado",                       "deps": ["Terceiro Ideal (Teceluz)"                 ], "reqStat": null,                     "reqVal":  0 },
+        { "sub": "Vínculo", "rank": 4, "name": "Obter Escudeiro (Teceluz)",                 "deps": ["Terceiro Ideal (Teceluz)"                 ], "reqStat": null,                     "reqVal":  0 }
       ]
     }
   }

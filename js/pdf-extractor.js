@@ -114,6 +114,24 @@ var PdfExtractor = (function () {
   // Regex que casa a linha de ativação inteira (para remover do corpo)
   const ACT_LINE_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d \t]*/gi;
 
+  // Padrões que marcam fim de uma entrada de habilidade no livro do Cosmere RPG
+  const STOP_PATTERNS = [
+    /Licenciado para\b/i,
+    /Cap[ií]tulo\s+\d+\s*[:–]/i,
+    /Especializa[cç][aã]o\s+\w[^\n]{0,40}Os talentos a seguir/i,
+    /Os talentos a seguir[^.]{0,60}aparecem na (especializa[cç][aã]o|[aá]rvore)/i,
+  ];
+
+  // Trunca `text` na primeira ocorrência de qualquer padrão de parada
+  function truncateAtStop(text) {
+    let cut = text.length;
+    for (const re of STOP_PATTERNS) {
+      const m = re.exec(text);
+      if (m && m.index < cut) cut = m.index;
+    }
+    return text.substring(0, cut).trimEnd();
+  }
+
   // ------------------------------------------------------------------
   // Para cada nome de habilidade, encontra a primeira ocorrência no
   // texto normalizado e captura o trecho seguinte como "descrição"
@@ -216,18 +234,102 @@ var PdfExtractor = (function () {
       .trim();
   }
 
+  // ------------------------------------------------------------------
+  // Abordagem primária: âncora em "Ativação: [símbolo]"
+  // Toda habilidade do Cosmere RPG tem exatamente um "Ativação:" em seu bloco.
+  // Usamos isso como delimitador confiável: a descrição vai de após o símbolo
+  // até o próximo "Ativação:" — eliminando o problema de boundary por nomes.
+  // ------------------------------------------------------------------
   function buildDescriptions(rawText, skillNames) {
+    const results   = {};
+    const sortedNames = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
+
+    // ── Pass 1: Activation-anchored ────────────────────────────────────────
+    const ACT_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d]+/gi;
+    const acts   = [];
+    let m;
+    while ((m = ACT_RE.exec(rawText)) !== null) {
+      acts.push({ blockStart: m.index, descStart: m.index + m[0].length });
+    }
+
+    for (let i = 0; i < acts.length; i++) {
+      const { blockStart, descStart } = acts[i];
+      const nextBlockStart = i + 1 < acts.length ? acts[i + 1].blockStart : rawText.length;
+
+      // Olha para trás até 600 chars para encontrar o cabeçalho da habilidade.
+      // Estrutura esperada: ... [fim da desc anterior] NOME \n Pré-requisitos: ... \n Ativação:
+      const LOOKBACK = 600;
+      const lookbackRaw = rawText.substring(Math.max(0, blockStart - LOOKBACK), blockStart);
+
+      // Isola a área do cabeçalho: texto ANTES do último "Pré-requisitos:"
+      const PREREQ_RE = /pré.?requisitos\s*:/gi;
+      let lastPrereqIdx = -1, pm;
+      while ((pm = PREREQ_RE.exec(lookbackRaw)) !== null) lastPrereqIdx = pm.index;
+      const headingArea   = lastPrereqIdx > 0 ? lookbackRaw.substring(0, lastPrereqIdx) : lookbackRaw;
+      const normHeading   = norm(headingArea);
+
+      // Encontra o último nome de habilidade na área de cabeçalho
+      // (mais próximo do "Pré-requisitos:", ou seja, o nome do bloco atual)
+      let foundName = null;
+      let foundPos  = -1;
+      for (const name of sortedNames) {
+        const nn = norm(name);
+        if (nn.length < 3) continue;
+        let pos = normHeading.indexOf(nn);
+        while (pos !== -1) {
+          if (!isInPrereqContext(normHeading, pos) && pos > foundPos) {
+            foundPos  = pos;
+            foundName = name;
+          }
+          pos = normHeading.indexOf(nn, pos + 1);
+        }
+      }
+      if (!foundName) continue;
+
+      // Extrai e limpa a descrição
+      const descRaw = rawText.substring(descStart, Math.min(nextBlockStart, descStart + MAX_DESC_LEN));
+      const full    = truncateAtStop(descRaw.trim());
+      if (full.length < 15 || looksLikeTableEntry(full)) continue;
+
+      const score = descScore(full);
+      if (score < 0) continue;
+
+      const cleanFull   = fixHyphens(full);
+      const flatFull    = cleanFull.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+      const activation  = extractActivation(rawText.substring(blockStart, descStart));
+      const description = cleanBody(flatFull.replace(ACT_LINE_RE, '').trim());
+      const desc        = makeSummary(cleanFull);
+
+      const existing = results[foundName];
+      if (!existing || score > (existing._score || 0) ||
+          (score === (existing._score || 0) && description.length > (existing.description || '').length)) {
+        results[foundName] = { description, desc, activation, _score: score };
+      }
+    }
+
+    // ── Pass 2: Fallback por nome para habilidades sem "Ativação:" ─────────
+    const missing = sortedNames.filter(n => !results[n]);
+    if (missing.length > 0) {
+      const fb = _buildDescriptionsByName(rawText, missing);
+      for (const [name, val] of Object.entries(fb)) results[name] = val;
+    }
+
+    // Remove campo interno de scoring
+    for (const v of Object.values(results)) delete v._score;
+    return results;
+  }
+
+  // Abordagem legada por nome — usada como fallback para skills sem "Ativação:"
+  function _buildDescriptionsByName(rawText, skillNames) {
     const { normText, rawPos } = buildTextIndex(rawText);
     const results = {};
-
     const sorted    = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
     const normNames = sorted.map(n => norm(n));
 
-    // Coleta todos os hits de todos os nomes (pode haver múltiplas ocorrências)
     const allHits = [];
     for (let i = 0; i < sorted.length; i++) {
-      const nn  = normNames[i];
-      let   pos = normText.indexOf(nn);
+      const nn = normNames[i];
+      let pos  = normText.indexOf(nn);
       while (pos !== -1) {
         allHits.push({ name: sorted[i], start: pos, nameEnd: pos + nn.length });
         pos = normText.indexOf(nn, pos + 1);
@@ -235,49 +337,36 @@ var PdfExtractor = (function () {
     }
     allHits.sort((a, b) => a.start - b.start);
 
-    // Agrupa hits por nome
     const byName = {};
-    for (const hit of allHits) {
-      (byName[hit.name] = byName[hit.name] || []).push(hit);
-    }
+    for (const hit of allHits) (byName[hit.name] = byName[hit.name] || []).push(hit);
 
-    // Para cada skill, escolhe a ocorrência com melhor score (depois maior janela)
     for (const [name, hits] of Object.entries(byName)) {
-      let bestFull  = '';
-      let bestScore = -Infinity;
+      let bestFull = '', bestScore = -Infinity;
       for (const { start, nameEnd } of hits) {
-        // Descarta ocorrências dentro de listas de pré-requisitos de outra skill
         if (isInPrereqContext(normText, start)) continue;
-
-        // Ignora hits em contexto de pré-requisito como fronteira de janela (win=80)
         const nextIdx    = allHits.findIndex(h => h.start > nameEnd && !isInPrereqContext(normText, h.start, 80));
         const nextNorm   = nextIdx !== -1 ? allHits[nextIdx].start : Infinity;
         const rawStart   = nameEnd < rawPos.length ? rawPos[nameEnd] : rawText.length;
         const rawNextHit = nextNorm < rawPos.length ? rawPos[nextNorm] : rawText.length;
         const rawEnd     = Math.min(rawNextHit, rawStart + MAX_DESC_LEN);
-        const full       = rawText.substring(rawStart, rawEnd).trim();
-
+        const full       = truncateAtStop(rawText.substring(rawStart, rawEnd).trim());
         if (full.length < 20 || looksLikeTableEntry(full)) continue;
         const score = descScore(full);
-        if (score < 0) continue; // descarta narrativa
+        if (score < 0) continue;
         if (score > bestScore || (score === bestScore && full.length > bestFull.length)) {
-          bestFull  = full;
-          bestScore = score;
+          bestFull = full; bestScore = score;
         }
       }
       if (bestFull) {
         const cleanFull   = fixHyphens(bestFull);
         const flatFull    = cleanFull.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-        const activation  = extractActivation(flatFull);
-        const description = cleanBody(flatFull.replace(ACT_LINE_RE, '').trim());
         results[name] = {
-          description,
-          desc: makeSummary(cleanFull),
-          activation,
+          description: cleanBody(flatFull.replace(ACT_LINE_RE, '').trim()),
+          desc:        makeSummary(cleanFull),
+          activation:  extractActivation(flatFull),
         };
       }
     }
-
     return results;
   }
 

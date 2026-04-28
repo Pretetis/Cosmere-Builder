@@ -304,8 +304,41 @@ const PdfExport = (() => {
 
   // ---- PÁGINA DE DESCRIÇÕES DE HABILIDADES ----
 
+  // Remove artefatos de PDF capturados erroneamente (rodapés, cabeçalhos de capítulo, labels de especialização)
+  function _cleanDescription(text) {
+    return (text || '')
+      .replace(/Licenciado para[^.]{0,120}\.?/gi, '')
+      .replace(/Cap[ií]tulo\s+\d+\s*[:–][^\n]*/gi, '')
+      .replace(/\d{2,3}\s+Licenciado/gi, '')
+      .replace(/Especializa[cç][aã]o\s+\w[^\n]{0,80}Os talentos a seguir[^.]*\./gi, '')
+      .replace(/Os talentos a seguir[^.]*\./gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  // Substitui símbolos fora do WinAnsi (> U+00FF) por equivalentes legíveis ou remove
+  function _sanitizePdf(text) {
+    return (text || '')
+      .replace(/↻|↺/g, '(recarregar)')
+      .replace(/→/g, '->')
+      .replace(/←/g, '<-')
+      .replace(/↑/g, '^')
+      .replace(/↓/g, 'v')
+      .replace(/★/g, '*')
+      .replace(/▶/g, '>')
+      .replace(/▷/g, '>')
+      .replace(/◆|●|•/g, '-')
+      .replace(/∞/g, 'inf')
+      .replace(/–|—/g, '-')
+      .replace(/…/g, '...')
+      .replace(/[""]/g, '"')
+      .replace(/['']/g, "'")
+      // Remove qualquer outro caractere fora do intervalo WinAnsi
+      .replace(/[^\x20-\xFF]/g, '');
+  }
+
   function _wrapText(text, font, size, maxWidth) {
-    const words = (text || '').split(' ');
+    const words = _sanitizePdf(text || '').split(' ');
     const lines = [];
     let current = '';
     for (const word of words) {
@@ -327,7 +360,7 @@ const PdfExport = (() => {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     const W = 595, H = 842;
-    const margin = 20, innerM = margin + 4;
+    const margin = 14, innerM = margin + 4;
     const contentX = margin + 12;
     const contentW = W - contentX - margin - 12;
     const goldColor = rgb(0.83, 0.66, 0.33);
@@ -365,7 +398,8 @@ const PdfExport = (() => {
       if (prev) {
         let replace = false;
         if (skill.cls === radiantCls && prev.cls !== radiantCls) replace = true;
-        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) replace = true;
+        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls
+                 && !state.freeUnlockedSkills.has(skill.id)) replace = true;
         else if (prev.cls !== radiantCls && prev.cls !== ancestryCls) {
           const pf = state.freeUnlockedSkills.has(prev.id), sf = state.freeUnlockedSkills.has(skill.id);
           if (pf && !sf) replace = true;
@@ -418,8 +452,10 @@ const PdfExport = (() => {
       y -= 11;
 
       for (const skill of skills.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))) {
-        const descLines = _wrapText(skill.desc, font, 7.5, contentW);
-        const blockH = 10 + descLines.length * 9 + 5;
+        const summaryLines = _wrapText(_cleanDescription(skill.desc || ''), font, 7.5, contentW);
+        const fullDesc = _cleanDescription(skill.description || '');
+        const fullLines = fullDesc ? _wrapText(fullDesc, font, 7, contentW - 6) : [];
+        const blockH = 10 + summaryLines.length * 9 + (fullLines.length ? 4 + fullLines.length * 8.5 : 0) + 6;
 
         if (y - blockH < bottomLimit) { page = newPage(); y = H - margin - 24; }
 
@@ -427,13 +463,23 @@ const PdfExport = (() => {
         page.drawText(`R${skill.rank}  ${skill.name}`, { x: contentX + 4, y, size: 9, font: fontBold, color: rgb(0.12, 0.12, 0.12) });
         y -= 10;
 
-        // Descrição
-        for (const line of descLines) {
+        // Resumo
+        for (const line of summaryLines) {
           if (y < bottomLimit) { page = newPage(); y = H - margin - 24; }
           page.drawText(line, { x: contentX + 10, y, size: 7.5, font, color: rgb(0.35, 0.35, 0.35) });
           y -= 9;
         }
-        y -= 5;
+
+        // Descrição completa com mecânica
+        if (fullLines.length) {
+          y -= 3;
+          for (const line of fullLines) {
+            if (y < bottomLimit) { page = newPage(); y = H - margin - 24; }
+            page.drawText(line, { x: contentX + 12, y, size: 7, font, color: rgb(0.5, 0.5, 0.5) });
+            y -= 8.5;
+          }
+        }
+        y -= 6;
       }
       y -= 8;
     }
@@ -454,7 +500,7 @@ const PdfExport = (() => {
 
     // 2. Cores base da identidade visual
     const goldColor = rgb(0.83, 0.66, 0.33); // Dourado que você já usava
-    const margin = 20;
+    const margin = 14;
     const innerM = margin + 4; // Borda interna
 
     // 3. Bordas Decorativas (Estilo Fantasia)
@@ -789,7 +835,8 @@ const PdfExport = (() => {
             
             // Força a prioridade para o Radiante selecionado
             if (skill.cls === radiantCls && prev.cls !== radiantCls) replace = true;
-            else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) replace = true;
+            else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls
+                     && !state.freeUnlockedSkills.has(skill.id)) replace = true;
             else if (prev.cls !== radiantCls && prev.cls !== ancestryCls) {
               const prevIsFree = state.freeUnlockedSkills.has(prev.id);
               const skillIsFree = state.freeUnlockedSkills.has(skill.id);

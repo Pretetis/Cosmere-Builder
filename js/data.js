@@ -266,7 +266,12 @@ const CosData = (() => {
   }
 
   function findRadiantSkillByName(name, cls) {
-    return RADIANT_SKILLS.find(s => s.cls === cls && s.name === name);
+    const exact = RADIANT_SKILLS.find(s => s.cls === cls && s.name === name);
+    if (exact) return exact;
+    // Deps que referenciam "Primeiro Ideal" resolvem para o nó raiz (rank 0) da classe,
+    // independente de como o nó raiz foi nomeado
+    if (name === 'Primeiro Ideal') return RADIANT_SKILLS.find(s => s.cls === cls && s.rank === 0);
+    return undefined;
   }
 
   function buildRadiantGraph(cls) {

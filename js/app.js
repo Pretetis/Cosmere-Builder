@@ -837,8 +837,9 @@ const App = (() => {
         if (skill.cls === radiantCls && prev.cls !== radiantCls) {
           replace = true;
         }
-        // Prioridade 2: Pertence à classe da trilha inicial
-        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) {
+        // Prioridade 2: Pertence à classe da trilha inicial (só se compra direta, não free)
+        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls
+                 && !state.freeUnlockedSkills.has(skill.id)) {
           replace = true;
         }
         // Prioridade 3: Desempate por compra direta padrão / quantidade
