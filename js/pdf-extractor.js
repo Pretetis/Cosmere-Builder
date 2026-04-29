@@ -138,29 +138,34 @@ var PdfExtractor = (function () {
   // Símbolos do PDF: ▶ (1 ação), ▷ (ação livre), 2, 3, ∞, ★
   // ------------------------------------------------------------------
   function extractActivation(flat) {
-    const m = flat.match(/ativa[cç][aã]o\s*:\s*([★∞▶▷\d]+)/i);
+    const m = flat.match(/ativa[cç][aã]o\s*:\s*([★∞▶▷↻\d]+)/i);
     if (!m) return null;
     const sym = m[1].trim();
     if (sym === '∞')                return 'passive';
     if (sym === '★')                return 'special';
     if (sym === '▶')                return 'action1';
     if (sym === '▷')                return 'free';
+    if (sym === '↻')                return 'reaction';
     if (sym === '2')                return 'action2';
     if (sym === '3')                return 'action3';
     return null;
   }
 
   // Regex que casa a linha de ativação inteira (para remover do corpo)
-  const ACT_LINE_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d \t]*/gi;
+  const ACT_LINE_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷↻\d \t]*/gi;
 
   // Padrões que marcam fim de uma entrada de habilidade no livro do Cosmere RPG.
   // Usa [\s\S] em vez de [^\n] para tolerar quebras de página/coluna entre o
   // cabeçalho "Especialização X" e o subtítulo "Os talentos a seguir".
+  // O pattern "* Nome (talento-chave de X)" identifica páginas de overview
+  // de árvore com cards em grade — layout diferente das descrições, não pode
+  // ser absorvido pelo bloco anterior.
   const STOP_PATTERNS = [
     /Licenciado para\b/i,
     /Cap[ií]tulo\s+\d+\s*[:–]/i,
     /Especializa[cç][aã]o\s+\w[\s\S]{0,80}Os talentos a seguir/i,
     /Os talentos a seguir[\s\S]{0,80}aparecem na (especializa[cç][aã]o|[aá]rvore)/i,
+    /\*\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç][^\n]{0,60}\(talento-chave\b/i,
   ];
 
   // Trunca `text` na primeira ocorrência de qualquer padrão de parada
@@ -171,6 +176,17 @@ var PdfExtractor = (function () {
       if (m && m.index < cut) cut = m.index;
     }
     return text.substring(0, cut).trimEnd();
+  }
+
+  // Remove rodapés/cabeçalhos de página que aparecem no MEIO do bloco de
+  // descrição, entre "Ativação:" e o texto real. Sem isso, truncateAtStop
+  // cortaria no primeiro "Capítulo X:" (rodapé) e devolveria descrição vazia.
+  function stripPageArtifacts(text) {
+    return text
+      .replace(/\d{1,3}\s+Cap[ií]tulo\s+\d+\s*[:–][^\n]*\n?/g, ' ')
+      .replace(/Cap[ií]tulo\s+\d+\s*[:–][^\n]{0,80}\s+\d{1,3}\s*\n?/g, ' ')
+      .replace(/Licenciado para[^\n]*\n?/g, ' ')
+      .replace(/\s{2,}/g, ' ');
   }
 
   // Retorna a posição raw (dentro de [windowStart, windowEnd)) onde o próximo
@@ -195,9 +211,11 @@ var PdfExtractor = (function () {
           if (!/[a-z0-9]/.test(nb) && !/[a-z0-9]/.test(na)) {
             const rIdx = pos < rawPos.length ? rawPos[pos] : window.length;
             if (rIdx < cut) {
-              // Só corta se o nome aparece como cabeçalho: após \n (com rank opcional) ou fim de frase
-              const rawCtx = window.substring(Math.max(0, rIdx - 15), rIdx);
-              if (/[\n\r]\s*(?:R\d+\s+)?$/.test(rawCtx) || /[.!?]\s+$/.test(rawCtx)) {
+              // Só corta se o nome aparece como cabeçalho: após \n (com rank ou
+              // símbolo de ativação opcional) ou fim de frase. Páginas overview
+              // têm formato "★ Nome", "↻ Nome", "∞ Nome", "*  Nome", etc.
+              const rawCtx = window.substring(Math.max(0, rIdx - 20), rIdx);
+              if (/[\n\r]\s*(?:R\d+\s+|[★∞▶▷↻*\d]\s+)?$/.test(rawCtx) || /[.!?]\s+$/.test(rawCtx)) {
                 cut = rIdx;
               }
             }
@@ -266,7 +284,7 @@ var PdfExtractor = (function () {
     if (actIdx !== -1) {
       // Avança após "Ativação: ★" — símbolo pode ser ★ ∞ ▶ ou dígito (ex: "3")
       const afterAct = flat.substring(actIdx)
-        .replace(/^ativa[cç][aã]o\s*:\s*[★∞▶▷◆●\d \t]*/i, '').trim();
+        .replace(/^ativa[cç][aã]o\s*:\s*[★∞▶▷↻◆●\d \t]*/i, '').trim();
       const first = afterAct.match(/^(.{20,160}[.!?])/);
       if (first) return first[1].trim();
       const cut = afterAct.substring(0, 140).trim();
@@ -308,7 +326,7 @@ var PdfExtractor = (function () {
         ''
       )
       // Remove símbolos de ativação soltos no início
-      .replace(/^[★∞▶▷\d\s]+/, '')
+      .replace(/^[★∞▶▷↻\d\s]+/, '')
       .trim();
   }
 
@@ -323,7 +341,7 @@ var PdfExtractor = (function () {
     const sortedNames = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
 
     // ── Pass 1: Activation-anchored ────────────────────────────────────────
-    const ACT_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d]+/gi;
+    const ACT_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷↻\d]+/gi;
     const acts   = [];
     let m;
     while ((m = ACT_RE.exec(rawText)) !== null) {
@@ -347,7 +365,9 @@ var PdfExtractor = (function () {
       const normHeading   = norm(headingArea);
 
       // Encontra o último nome de habilidade na área de cabeçalho
-      // (mais próximo do "Pré-requisitos:", ou seja, o nome do bloco atual)
+      // (mais próximo do "Pré-requisitos:", ou seja, o nome do bloco atual).
+      // Exige fronteira de palavra para evitar que "Às Sombras" (substring)
+      // sobrescreva "Passo nas Sombras" como nome encontrado.
       let foundName = null;
       let foundPos  = -1;
       for (const name of sortedNames) {
@@ -355,7 +375,10 @@ var PdfExtractor = (function () {
         if (nn.length < 3) continue;
         let pos = normHeading.indexOf(nn);
         while (pos !== -1) {
-          if (!isInPrereqContext(normHeading, pos) && pos > foundPos) {
+          const nb = pos > 0 ? normHeading[pos - 1] : ' ';
+          const na = (pos + nn.length) < normHeading.length ? normHeading[pos + nn.length] : ' ';
+          const wordBoundary = !/[a-z0-9]/.test(nb) && !/[a-z0-9]/.test(na);
+          if (wordBoundary && !isInPrereqContext(normHeading, pos) && pos > foundPos) {
             foundPos  = pos;
             foundName = name;
           }
@@ -367,7 +390,7 @@ var PdfExtractor = (function () {
       // Extrai e limpa a descrição (cortando no próximo nome de habilidade encontrado como cabeçalho)
       const rawWindowEnd = Math.min(nextBlockStart, descStart + MAX_DESC_LEN);
       const descRaw = rawText.substring(descStart, clipAtNextSkillName(rawText, descStart, rawWindowEnd, foundName, sortedNames));
-      const full    = truncateAtStop(descRaw.trim());
+      const full    = truncateAtStop(stripPageArtifacts(descRaw).trim());
       if (full.length < 15 || looksLikeTableEntry(full)) continue;
 
       const score = descScore(full);
@@ -450,13 +473,39 @@ var PdfExtractor = (function () {
   }
 
   // ------------------------------------------------------------------
-  // Coleta todos os nomes de habilidades carregados no CosData
+  // Remove sufixo entre parênteses no fim do nome — usado para alias.
+  // Ex.: "Primeiro Ideal (Talento Chave de Alternaulta)" → "Primeiro Ideal"
+  //      "Mudar Forma" → "Mudar Forma" (sem mudança)
+  // ------------------------------------------------------------------
+  function canonicalName(name) {
+    return name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
+
+  // Aliases manuais para divergências singular/plural ou typos entre o JSON
+  // do projeto e o nome no livro de regras. Mantém a chave como nome no JSON
+  // e o valor como nome no livro (que casa na extração).
+  const MANUAL_ALIASES = {
+    'Teceluminações Duradouras': 'Teceluminação Duradoura',
+    'Transmutar Chama':          'Transmutar Chamas',
+  };
+
+  // ------------------------------------------------------------------
+  // Coleta todos os nomes de habilidades carregados no CosData.
+  // Inclui o nome canônico (sem sufixo entre parênteses) para que o livro,
+  // que costuma listar os Ideais sem qualificador de ordem, ainda case.
   // ------------------------------------------------------------------
   function getAllSkillNames() {
     const names = new Set();
-    (CosData.SKILLS           || []).forEach(s => names.add(s.name));
-    (CosData.RADIANT_SKILLS   || []).forEach(s => names.add(s.name));
-    (CosData.ADDITIONAL_SKILLS|| []).forEach(s => names.add(s.name));
+    const add = name => {
+      if (!name) return;
+      names.add(name);
+      const c = canonicalName(name);
+      if (c && c !== name) names.add(c);
+      if (MANUAL_ALIASES[name]) names.add(MANUAL_ALIASES[name]);
+    };
+    (CosData.SKILLS           || []).forEach(s => add(s.name));
+    (CosData.RADIANT_SKILLS   || []).forEach(s => add(s.name));
+    (CosData.ADDITIONAL_SKILLS|| []).forEach(s => add(s.name));
     return [...names];
   }
 
@@ -471,7 +520,12 @@ var PdfExtractor = (function () {
     ];
     let applied = 0;
     for (const skill of pools) {
-      const entry = descriptions[skill.name];
+      // Fallback de alias em ordem: (1) nome literal, (2) sem sufixo entre
+      // parênteses ("Primeiro Ideal (Talento Chave...)" → "Primeiro Ideal"),
+      // (3) alias manual para divergências singular/plural com o livro.
+      const entry = descriptions[skill.name]
+                 || descriptions[canonicalName(skill.name)]
+                 || (MANUAL_ALIASES[skill.name] && descriptions[MANUAL_ALIASES[skill.name]]);
       if (!entry) continue;
       // Suporta formato novo { desc, description } e formato legado (string)
       if (typeof entry === 'string') {
