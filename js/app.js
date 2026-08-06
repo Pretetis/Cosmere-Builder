@@ -162,8 +162,12 @@ const App = (() => {
     // Include the 2 active radiant surges if an order is chosen
     if (state.profile.radiantClass) {
       const keys = CosData.RADIANT_CLASS_PERICIAS[state.profile.radiantClass] || [];
-      for (const k of keys) sum += state.radiantPericias[k] || 0;
-      sum -= keys.length; // 1 rank gratuito por surto ao escolher a ordem
+      for (const k of keys) {
+        sum += state.radiantPericias[k] || 0;
+        // 1 rank gratuito por surto ao escolher a ordem — mas surtos travados
+        // pelo Cânone ainda não foram concedidos, então não abatem nada.
+        if (!isCanoneLockedSurge(k)) sum -= 1;
+      }
     }
 
     if (state.profile.ancestryClass && CLASS_INITIAL_PERICIA[state.profile.ancestryClass]) {
@@ -512,6 +516,21 @@ const App = (() => {
         }
       }
       state.spentTalents--;
+
+      // Inverso do auto-grant: ao remover o ideal que libera o surto travado
+      // pelo Cânone, o surto volta a 0 (senão sobram ranks pagos num surto travado)
+      if (radiant) {
+        const rCls = state.profile.radiantClass;
+        const isSegundo  = skill.name.includes('Segundo Ideal');
+        const isTerceiro = skill.name.includes('Terceiro Ideal');
+        if (rCls === 'Pulverizador' && state.profile.pulverizadorCanone === true && isSegundo) {
+          state.radiantPericias['divisao'] = 0;
+        }
+        if (rCls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
+          if (isSegundo)  state.radiantPericias['gravitacao'] = 0;
+          if (isTerceiro) state.radiantPericias['divisao'] = 0;
+        }
+      }
 
       // Lógica de remoção da classe inicial e da perícia fixa
       if (!radiant && !additional && skill.rank === 0 && skill.cls === state.profile.ancestryClass) {
@@ -2289,19 +2308,22 @@ const App = (() => {
         };
 
         // --- Ranks de Perícia (contar checkboxes marcados por perícia) ---
+        // Mesmo mapeamento usado na exportação: as caixas seguem o rótulo
+        // impresso na ficha pt-BR, que está em ordem alfabética diferente da
+        // ficha original em inglês de onde vieram os nomes dos campos.
         const SKILL_RANK_BOXES = {
           agilidade:       [7, 10, 6, 9, 8],
-          atletismo:       [12, 15, 11, 14, 13],
+          armamentoLeve:   [12, 15, 11, 14, 13],
           armamentoPesado: [17, 20, 16, 19, 18],
-          armamentoLeve:   [22, 25, 21, 24, 23],
+          atletismo:       [22, 25, 21, 24, 23],
           furtividade:     [27, 30, 26, 29, 28],
           ladroagem:       [32, 35, 31, 34, 33],
-          manufatura:      [42, 45, 41, 44, 43],
-          deducao:         [47, 50, 46, 49, 48],
-          disciplina:      [52, 55, 51, 54, 53],
-          intimidacao:     [57, 60, 56, 59, 58],
-          saber:           [62, 65, 61, 64, 63],
-          medicina:        [67, 70, 66, 69, 68],
+          deducao:         [42, 45, 41, 44, 43],
+          disciplina:      [47, 50, 46, 49, 48],
+          intimidacao:     [52, 55, 51, 54, 53],
+          manufatura:      [57, 60, 56, 59, 58],
+          medicina:        [62, 65, 61, 64, 63],
+          saber:           [67, 70, 66, 69, 68],
           dissimulacao:    [77, 80, 76, 79, 78],
           intuicao:        [82, 85, 81, 84, 83],
           lideranca:       [87, 90, 86, 89, 88],
@@ -2334,14 +2356,23 @@ const App = (() => {
         for (const key of Object.keys(CosData.PERICIAS_RADIANTES)) radiantPericias[key] = 0;
         if (radiantClass) {
           const activeSurges = CosData.RADIANT_CLASS_PERICIAS[radiantClass] || [];
-          const surgeBoxSlots = [
-            [37, 40, 36, 39, 38],
-            [72, 75, 71, 74, 73],
-            [107, 110, 106, 109, 108],
+          const surgeSlots = [
+            { nameField: 'Custom Skill 1', boxes: [37, 40, 36, 39, 38] },
+            { nameField: 'Custom Skill 2', boxes: [72, 75, 71, 74, 73] },
+            { nameField: 'Custom Skill 3', boxes: [107, 110, 106, 109, 108] },
           ];
-          activeSurges.forEach((surgeKey, i) => {
-            if (i >= surgeBoxSlots.length) return;
-            radiantPericias[surgeKey] = surgeBoxSlots[i].filter(b => isChecked(`Rank Box ${b}`)).length;
+          // A linha custom usada por cada surto depende do atributo dele, então
+          // localizamos pelo nome escrito na ficha (com fallback pela ordem).
+          const freeSlots = [...surgeSlots];
+          activeSurges.forEach(surgeKey => {
+            const info = CosData.PERICIAS_RADIANTES[surgeKey];
+            let slot = info
+              ? freeSlots.find(s => getField(s.nameField).trim().toLowerCase() === info.name.toLowerCase())
+              : null;
+            if (!slot) slot = freeSlots[0]; // fichas antigas: ordem de listagem
+            if (!slot) return;
+            freeSlots.splice(freeSlots.indexOf(slot), 1);
+            radiantPericias[surgeKey] = slot.boxes.filter(b => isChecked(`Rank Box ${b}`)).length;
           });
         }
 

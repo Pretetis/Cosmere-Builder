@@ -693,19 +693,23 @@ const PdfExport = (() => {
       forBothPages('Cognitive Defense', String(defenses.cognitive));
       forBothPages('Spiritual Defense', String(defenses.spiritual));
 
+      // ATENÇÃO: os nomes dos campos vieram da ficha original em inglês, mas o
+      // br_sheet.pdf reordenou as linhas para a ordem alfabética em pt-BR.
+      // O mapeamento abaixo segue o RÓTULO IMPRESSO de cada linha, não a tradução
+      // do nome do campo (ex.: a linha "armamento leve" usa o campo "Athletics").
       const SKILL_SCORE_FIELDS = {
-        agilidade:       'Agility',
-        atletismo:       'Athletics',
-        armamentoPesado: 'Heavy Weapons',
-        armamentoLeve:   'Light Weapons',
-        furtividade:     'Stealth',
-        ladroagem:       'Thievery',
-        manufatura:      'Crafting',
-        deducao:         'Deduction',
-        disciplina:      'Discipline',
-        intimidacao:     'Intimidation',
-        saber:           'Lore',
-        medicina:        'Medicine',
+        agilidade:       'Agility',        // linha 1 — agilidade
+        armamentoLeve:   'Athletics',      // linha 2 — armamento leve
+        armamentoPesado: 'Heavy Weapons',  // linha 3 — armamento pesado
+        atletismo:       'Light Weapons',  // linha 4 — atletismo
+        furtividade:     'Stealth',        // linha 5 — furtividade
+        ladroagem:       'Thievery',       // linha 6 — ladinagem
+        deducao:         'Crafting',       // linha 1 — dedução
+        disciplina:      'Deduction',      // linha 2 — disciplina
+        intimidacao:     'Discipline',     // linha 3 — intimidação
+        manufatura:      'Intimidation',   // linha 4 — manufatura
+        medicina:        'Lore',           // linha 5 — medicina
+        saber:           'Medicine',       // linha 6 — saber
         dissimulacao:    'Deception',
         intuicao:        'Insight',
         lideranca:       'Leadership',
@@ -721,19 +725,20 @@ const PdfExport = (() => {
         setField(fieldName, String(rank + attrBonus));
       }
 
+      // Mesma regra do mapa acima: cada array são as 5 caixas da linha impressa.
       const SKILL_RANK_BOXES = {
         agilidade:       [7, 10, 6, 9, 8],
-        atletismo:       [12, 15, 11, 14, 13],
+        armamentoLeve:   [12, 15, 11, 14, 13],
         armamentoPesado: [17, 20, 16, 19, 18],
-        armamentoLeve:   [22, 25, 21, 24, 23],
+        atletismo:       [22, 25, 21, 24, 23],
         furtividade:     [27, 30, 26, 29, 28],
         ladroagem:       [32, 35, 31, 34, 33],
-        manufatura:      [42, 45, 41, 44, 43],
-        deducao:         [47, 50, 46, 49, 48],
-        disciplina:      [52, 55, 51, 54, 53],
-        intimidacao:     [57, 60, 56, 59, 58],
-        saber:           [62, 65, 61, 64, 63],
-        medicina:        [67, 70, 66, 69, 68],
+        deducao:         [42, 45, 41, 44, 43],
+        disciplina:      [47, 50, 46, 49, 48],
+        intimidacao:     [52, 55, 51, 54, 53],
+        manufatura:      [57, 60, 56, 59, 58],
+        medicina:        [62, 65, 61, 64, 63],
+        saber:           [67, 70, 66, 69, 68],
         dissimulacao:    [77, 80, 76, 79, 78],
         intuicao:        [82, 85, 81, 84, 83],
         lideranca:       [87, 90, 86, 89, 88],
@@ -750,27 +755,31 @@ const PdfExport = (() => {
 
       if (p.radiantClass) {
         const activeSurges = CosData.RADIANT_CLASS_PERICIAS[p.radiantClass] || [];
+        // Cada linha custom fica no rodapé da coluna da sua defesa — o surto
+        // precisa cair na coluna do atributo dele, não na ordem de listagem.
         const slots = [
-          { scoreField: 'Physical Custom',  nameField: 'Custom Skill 1', abbrField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
-          { scoreField: 'Cognitive Custom', nameField: 'Custom Skill 2', abbrField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
-          { scoreField: 'Spiritual Custom', nameField: 'Custom Skill 3', abbrField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
+          { defense: 'physical',  scoreField: 'Physical Custom',  nameField: 'Custom Skill 1', abbrField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
+          { defense: 'cognitive', scoreField: 'Cognitive Custom', nameField: 'Custom Skill 2', abbrField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
+          { defense: 'spiritual', scoreField: 'Spiritual Custom', nameField: 'Custom Skill 3', abbrField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
         ];
-        let currentSlotIndex = 0;
+        const usedSlots = new Set();
         activeSurges.forEach(surgeKey => {
           const info = CosData.PERICIAS_RADIANTES[surgeKey];
-          if (!info || currentSlotIndex >= slots.length) return;
-          const rank       = state.radiantPericias[surgeKey] || 0;
-          const attrVal    = a[info.attr] || 0;
+          if (!info) return;
           const attrInfo   = CosData.ATTRIBUTES[info.attr];
           const attrAbbr   = attrInfo ? attrInfo.abbr : '';
-          const targetSlot = slots[currentSlotIndex];
+          const targetSlot = slots.find(s => !usedSlots.has(s) && attrInfo && s.defense === attrInfo.defense)
+                          || slots.find(s => !usedSlots.has(s));
+          if (!targetSlot) return;
+          usedSlots.add(targetSlot);
+          const rank    = state.radiantPericias[surgeKey] || 0;
+          const attrVal = a[info.attr] || 0;
           setField(targetSlot.abbrField, attrAbbr, 5);
           setField(targetSlot.nameField, info.name);
           setField(targetSlot.scoreField, String(rank + attrVal));
           for (let i = 0; i < targetSlot.boxes.length; i++) {
             setCheck(`Rank Box ${targetSlot.boxes[i]}`, i < rank);
           }
-          currentSlotIndex++;
         });
       }
 
