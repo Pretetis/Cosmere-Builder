@@ -29,13 +29,34 @@ jobs:
       - name: Configurar Pages
         uses: actions/configure-pages@v5
 
+      # Só o que o navegador precisa. docs/ (imagens do README), scripts/ e os
+      # arquivos de tooling não são carregados pelo site e pesavam ~7 MB.
+      - name: Montar a pasta de publicação
+        run: |
+          mkdir -p _site
+          rsync -a \
+            --exclude '_site' \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'docs' \
+            --exclude 'scripts' \
+            --exclude 'node_modules' \
+            --exclude 'package.json' \
+            --exclude 'package-lock.json' \
+            --exclude 'CLAUDE.md' \
+            --exclude 'start.bat' \
+            ./ _site/
+          du -sh _site
+
       # Site estático puro (HTML/CSS/JS) — sem build step, sem Jekyll.
-      # A action já exclui .git e .github do artefato.
       - name: Empacotar o site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
       - name: Publicar
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Padrão é 600000 (10 min) — o backend do Pages está demorando mais que isso
+          timeout: 1200000
