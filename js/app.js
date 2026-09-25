@@ -1137,6 +1137,11 @@ const App = (() => {
           ${isPower ? powerInfoHtml(skill) : ''}
           <div class="modal-desc-section">
             <div class="modal-desc-label">Descrição</div>
+            ${skill.descLang === 'en' ? `
+            <div class="modal-translate-bar">
+              <span id="modal-translate-msg">Texto em inglês.</span>
+              <button id="modal-translate" class="modal-translate-btn">Traduzir para português</button>
+            </div>` : ''}
             <div class="modal-desc-text">${skill.description || '<em style="color:var(--text-muted);font-size:12px;">Carregue o livro em PDF na barra lateral para ver a descrição completa.</em>'}</div>
             ${skill.descriptionOriginal ? `
             <details class="modal-desc-original">
@@ -1163,6 +1168,17 @@ const App = (() => {
     // Bind events
     document.getElementById('modal-backdrop').addEventListener('click', hideSkillModal);
     document.getElementById('modal-close').addEventListener('click', hideSkillModal);
+
+    // Traduz o(s) livro(s) em inglês ali mesmo e reabre o modal já em português
+    const translateBtn = document.getElementById('modal-translate');
+    translateBtn?.addEventListener('click', async () => {
+      const msg = document.getElementById('modal-translate-msg');
+      translateBtn.disabled = true;
+      const ok = await translateEnglishBooks(text => { if (msg) msg.textContent = text; });
+      updateBookPdfUI();
+      if (ok) { hideSkillModal(); showSkillModal(skill); }
+      else translateBtn.disabled = false;
+    });
 
     const actionBtn = document.getElementById('modal-action');
     if (actionBtn && !actionBtn.classList.contains('disabled')) {
@@ -3675,17 +3691,29 @@ const App = (() => {
     list.querySelectorAll('.book-chip-translate').forEach(btn => btn.addEventListener('click', async () => {
       list.querySelectorAll('button').forEach(b => { b.disabled = true; });
       bookStatus.style.display = 'block';
-      bookStatus.textContent = 'Preparando o tradutor do navegador…';
-      try {
-        const { translated, total } = await PdfExtractor.translateBook(btn.dataset.book, msg => {
-          bookStatus.textContent = msg;
-        });
-        bookStatus.textContent = `Tradução automática pronta: ${translated}/${total} descrições em português.`;
-      } catch (err) {
-        bookStatus.textContent = `Erro: ${err.message}`;
-      }
+      await translateEnglishBooks(msg => { bookStatus.textContent = msg; }, btn.dataset.book);
       updateBookPdfUI();
     }));
+  }
+
+  // Tradução no próprio navegador dos livros em inglês ainda não traduzidos.
+  // Devolve true se terminou sem erro; mensagens de progresso/erro vão para onMsg.
+  async function translateEnglishBooks(onMsg, onlyId = null) {
+    const books = PdfExtractor.listBooks().filter(b => b.translatable && (!onlyId || b.id === onlyId));
+    if (!books.length) { onMsg('Nada para traduzir.'); return true; }
+    onMsg('Preparando o tradutor do navegador…');
+    try {
+      let translated = 0, total = 0;
+      for (const b of books) {
+        const r = await PdfExtractor.translateBook(b.id, onMsg);
+        translated += r.translated; total += r.total;
+      }
+      onMsg(`Tradução pronta: ${translated}/${total} textos em português.`);
+      return true;
+    } catch (err) {
+      onMsg(`Não deu para traduzir: ${err.message}`);
+      return false;
+    }
   }
 
   // ---- INIT (async - waits for skills JSON) ----

@@ -3493,6 +3493,17 @@ body.setting-misto .sidebar-header h1 {
 }
 .book-chip-translate:hover:not(:disabled) { border-color: var(--text-muted); }
 .book-chip button:disabled { opacity: 0.5; cursor: default; }
+.modal-translate-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+  font-size: 11px; color: var(--text-muted);
+}
+.modal-translate-btn {
+  background: none; border: 1px solid #d4a853; border-radius: 4px; color: #d4a853;
+  cursor: pointer; font-size: 11px; padding: 3px 8px;
+}
+.modal-translate-btn:disabled { opacity: 0.5; cursor: default; }
 .modal-desc-original { margin-top: 10px; font-size: 11px; color: var(--text-muted); }
 .modal-desc-original summary { cursor: pointer; }
 .modal-desc-original .modal-desc-text { margin-top: 6px; opacity: 0.85; }
