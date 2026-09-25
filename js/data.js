@@ -23,18 +23,18 @@ const CosData = (() => {
     agilidade:       { name: 'Agilidade',         attr: 'velocidade',  en: 'Agility' },
     furtividade:     { name: 'Furtividade',       attr: 'velocidade',  en: 'Stealth' },
     ladroagem:       { name: 'Ladroagem',         attr: 'velocidade',  en: 'Thievery' },
-    deducao:         { name: 'Deducao',           attr: 'intelecto',   en: 'Deduction' },
+    deducao:         { name: 'Dedução',           attr: 'intelecto',   en: 'Deduction' },
     manufatura:      { name: 'Manufatura',        attr: 'intelecto',   en: 'Crafting' },
     medicina:        { name: 'Medicina',          attr: 'intelecto',   en: 'Medicine' },
     saber:           { name: 'Saber',             attr: 'intelecto',   en: 'Lore' },
     disciplina:      { name: 'Disciplina',        attr: 'vontade',     en: 'Discipline' },
-    intimidacao:     { name: 'Intimidacao',       attr: 'vontade',     en: 'Intimidation' },
-    intuicao:        { name: 'Intuicao',          attr: 'consciencia', en: 'Insight' },
-    percepcao:       { name: 'Percepcao',         attr: 'consciencia', en: 'Perception' },
-    sobrevivencia:   { name: 'Sobrevivencia',     attr: 'consciencia', en: 'Survival' },
-    dissimulacao:    { name: 'Dissimulacao',      attr: 'presenca',    en: 'Deception' },
-    lideranca:       { name: 'Lideranca',         attr: 'presenca',    en: 'Leadership' },
-    persuasao:       { name: 'Persuasao',         attr: 'presenca',    en: 'Persuasion' }
+    intimidacao:     { name: 'Intimidação',       attr: 'vontade',     en: 'Intimidation' },
+    intuicao:        { name: 'Intuição',          attr: 'consciencia', en: 'Insight' },
+    percepcao:       { name: 'Percepção',         attr: 'consciencia', en: 'Perception' },
+    sobrevivencia:   { name: 'Sobrevivência',     attr: 'consciencia', en: 'Survival' },
+    dissimulacao:    { name: 'Dissimulação',      attr: 'presenca',    en: 'Deception' },
+    lideranca:       { name: 'Liderança',         attr: 'presenca',    en: 'Leadership' },
+    persuasao:       { name: 'Persuasão',         attr: 'presenca',    en: 'Persuasion' }
   };
 
   const PERICIAS_RADIANTES = {

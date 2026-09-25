@@ -704,6 +704,18 @@ var PdfExtractor = (function () {
   // ------------------------------------------------------------------
   // Aplica descrições diretamente nos objetos skill do CosData
   // ------------------------------------------------------------------
+  // Créditos de ilustração que o PDF intercala no texto do livro em inglês
+  // ("… doesn't stack.) DARKO STOJANOVIC", "TOP: …; BOTTOM: …"). Limpa na hora
+  // de exibir, então vale também para livros carregados antes da correção.
+  function cleanEnText(text) {
+    return (text || '')
+      .replace(/\b(?:TOP|BOTTOM|LEFT|RIGHT)\s*:\s*;?/g, ' ')
+      .replace(/\b[A-ZÀ-Ý]{2,}(?:[ '’.-]+[A-ZÀ-Ý]{2,})+\b/g, m => (/\d/.test(m) ? m : ' '))
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([.,;:])/g, '$1')
+      .trim();
+  }
+
   function applyToSkills(descriptions, lang = 'pt', keepOriginal = false) {
     let applied = 0;
     for (const skill of allPools()) {
@@ -720,15 +732,18 @@ var PdfExtractor = (function () {
       if (!entry) continue;
       // Tradução automática por cima do original: guarda o inglês para consulta
       if (keepOriginal && skill.description) skill.descriptionOriginal = skill.description;
+      const clean = t => (lang === 'en' ? cleanEnText(t) : t);
       // Suporta formato novo { desc, description } e formato legado (string)
       if (typeof entry === 'string') {
-        skill.description = entry;
-        skill.desc        = makeSummary(entry);
+        skill.description = clean(entry);
+        skill.desc        = makeSummary(skill.description);
       } else {
-        skill.description = entry.description;
-        skill.desc        = entry.desc;
+        skill.description = clean(entry.description);
+        skill.desc        = clean(entry.desc);
         if (entry.activation) skill.activation = entry.activation;
       }
+      // Idioma do texto exibido: o modal oferece traduzir quando é inglês
+      skill.descLang = keepOriginal ? 'pt-auto' : lang;
       applied++;
     }
     return applied;
@@ -795,7 +810,7 @@ var PdfExtractor = (function () {
   // o livro em pt-BR por último (onde existe texto oficial, ele vence)
   function applyAll() {
     for (const skill of allPools()) {
-      delete skill.description; delete skill.desc; delete skill.activation; delete skill.descriptionOriginal;
+      delete skill.description; delete skill.desc; delete skill.activation; delete skill.descriptionOriginal; delete skill.descLang;
     }
     const order = e => (e.lang === 'en' ? 0 : e.auto ? 1 : 2);
     const entries = Object.values(readStore()).sort((a, b) => order(a) - order(b));
@@ -1046,7 +1061,7 @@ var PdfExtractor = (function () {
 
     try {
       for (const { skill, basicId, entry } of jobs) {
-        const en = typeof entry === 'string' ? entry : entry.description;
+        const en = cleanEnText(typeof entry === 'string' ? entry : entry.description);
         const pt = await tr(en);
         if (basicId) {
           outBasics[basicId] = { ...entry, description: pt };
