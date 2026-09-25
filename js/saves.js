@@ -77,7 +77,7 @@ const SavesManager = (() => {
   function buildSaveSummary(data) {
     const p          = data.profile || {};
     const unlockedIds = data.unlockedSkills || [];
-    const allSkills  = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
+    const allSkills  = [...(CosData.ALL_SKILLS || CosData.SKILLS), ...CosData.RADIANT_SKILLS];
     const classes    = [...new Set(
       unlockedIds
         .map(id => { const s = allSkills.find(sk => sk.id === id); return s ? s.cls : null; })
@@ -88,6 +88,8 @@ const SavesManager = (() => {
       level:        p.level       || 1,
       race:         p.race        || 'human',
       radiantClass: p.radiantClass || null,
+      metalborn:    p.metalborn ? p.metalborn.path : null,
+      setting:      p.setting     || 'stormlight',
       classes,
     };
   }
@@ -125,17 +127,19 @@ const SavesManager = (() => {
           const s       = sv.summary || {};
           const nameTxt = s.name || 'Sem Nome';
           const lvlTxt  = `Nível ${s.level || 1}`;
-          const raceTxt = s.race === 'singer' ? 'Cantor' : 'Humano';
+          const raceTxt = { singer: 'Cantor', kandra: 'Kandra', koloss: 'Sangue-Koloss' }[s.race] || 'Humano';
           const classTxt = [
             ...(s.classes     || []),
             ...(s.radiantClass ? [s.radiantClass] : []),
+            ...(s.metalborn ? [s.metalborn] : []),
           ].join(' · ') || '—';
+          const settingTxt = { stormlight: 'Cosmere', mistborn: 'Mistborn', misto: 'Misto' }[s.setting || 'stormlight'];
           const dateTxt = formatSaveDate(sv.savedAt);
           return `
             <div class="sm-slot" data-id="${sv.id}">
               <div class="sm-slot-info">
                 <div class="sm-slot-name">${nameTxt}</div>
-                <div class="sm-slot-meta">${lvlTxt} · ${raceTxt} · ${classTxt}</div>
+                <div class="sm-slot-meta">${settingTxt} · ${lvlTxt} · ${raceTxt} · ${classTxt}</div>
                 <div class="sm-slot-date">${dateTxt}</div>
               </div>
               <div class="sm-slot-actions">

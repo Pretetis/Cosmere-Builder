@@ -95,6 +95,10 @@
             <span class="credits-value">Brotherwise Games</span>
           </div>
           <div class="credits-item">
+            <span class="credits-label">Cosmere RPG: Mistborn Handbook</span>
+            <span class="credits-value">Brotherwise Games</span>
+          </div>
+          <div class="credits-item">
             <span class="credits-label">Universo Cosmere</span>
             <span class="credits-value">Brandon Sanderson &amp; Dragonsteel Entertainment</span>
           </div>
@@ -109,6 +113,14 @@
           <div class="credits-item">
             <span class="credits-label">Símbolo do Cosmere</span>
             <span class="credits-value">Comunidade Cosmere — via Coppermind Wiki (CC BY-SA)</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Glifos dos Metais</span>
+            <span class="credits-value">Comunidade Cosmere — via Coppermind Wiki (CC BY-SA)</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Moeda de Scadrial (frente e verso)</span>
+            <span class="credits-value">Arquivo fornecido por Pretetis</span>
           </div>
           <!-- <div class="credits-item">
             <span class="credits-label">Ilustração Humano</span>
@@ -162,7 +174,7 @@
       <svg class="radiant-wheel-svg" id="radiant-wheel-svg" viewBox="0 0 560 560" preserveAspectRatio="xMidYMid meet"></svg>
       <div id="radiant-wheel-ring"></div>
       <div class="rw-center" id="rw-center">
-        <img src="svg/Cosmere_symbol.svg" alt="Cosmere">
+        <img src="svg/mundos/roshar.svg" alt="Roshar">
       </div>
     </div>
   </div>
@@ -186,7 +198,14 @@
         <div class="sidebar-header-text">
           <h1>Cosmere RPG</h1>
           <div class="subtitle">Sistema de Árvore de Habilidades</div>
+          <button class="setting-badge" id="setting-badge" title="Trocar cenário (Cosmere / Mistborn / Misto)"></button>
         </div>
+        <button id="btn-home" class="sidebar-toggle-btn" title="Voltar à tela inicial">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 10.5 12 3l9 7.5"></path>
+            <path d="M5 9.5V21h5v-6h4v6h5V9.5"></path>
+          </svg>
+        </button>
         <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Ocultar/Mostrar Ficha">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -265,9 +284,15 @@
       </div>
 
       <!-- Radiant -->
-      <div class="sidebar-section">
+      <div class="sidebar-section" id="radiant-section">
         <h2>Ordem Radiante</h2>
         <div id="radiant-select"></div>
+      </div>
+
+      <!-- Metalborn (Mistborn / Misto) -->
+      <div class="sidebar-section" id="metalborn-section" style="display:none">
+        <h2>Caminho Metalnascido</h2>
+        <div id="metalborn-select"></div>
       </div>
 
       <!-- Bottom bar -->
@@ -284,9 +309,16 @@
         <div class="save-load-row" style="margin-top: 6px; gap: 8px; display: flex; align-items: center;">
           <input type="file" id="book-pdf-input" accept="application/pdf" style="display:none;">
           <button class="btn" id="btn-load-book" style="flex:1;" type="button">Carregar Livro (PDF)</button>
-          <button class="btn danger" id="btn-clear-book" style="display:none; padding: 0 10px;" title="Remover descrições carregadas">&times;</button>
         </div>
         <div id="book-pdf-status" style="display:none; font-size:11px; color: var(--text-muted); padding: 4px 0 0 2px;"></div>
+        <!-- Livros carregados (Stormlight e Mistborn podem ficar juntos) -->
+        <div id="book-list" class="book-list"></div>
+        <div class="save-load-row book-backup-row">
+          <input type="file" id="book-backup-input" accept=".json,application/json" style="display:none;">
+          <button class="btn" id="btn-export-desc" type="button" title="Leva as descrições para outro aparelho sem o PDF">Exportar descrições</button>
+          <button class="btn" id="btn-import-desc" type="button">Importar descrições</button>
+        </div>
+        <div class="book-backup-note">Backup para uso pessoal: contém texto dos seus livros — não publique nem compartilhe.</div>
         <div class="credits-link-row">
           <button class="btn-credits-link" id="btn-credits">Créditos &amp; Sobre</button>
         </div>

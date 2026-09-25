@@ -52,7 +52,235 @@ const SkillRenderer = (() => {
     'Guardião das Pedras':       0xa87d4e,  // terracota
     // Ancestralidade
     'Cantor':                    0xe07b54,  // terracota-laranja
+    // Scadrial
+    'Kandra':                    0x6fbfa4,
+    'Sangue-Koloss':             0x5b7fc7,
+    'Brumoso':                   0x8fb4d8,
+    'Nascido da Bruma':          0xc9d3e0,
+    'Feruquemista':              0xd1a064,
+    'Ferroso':                   0xc98b56,
+    'Duplonato':                 0xa9a3d6,
   };
+
+  // Cor de uma árvore: mapa fixo ou, para Artes Metálicas, a cor do próprio metal
+  function treeColor(cls) {
+    if (COLOR_MAP[cls] !== undefined) return COLOR_MAP[cls];
+    const metal = CosData.getMetalOfTree && CosData.getMetalOfTree(cls);
+    if (metal) return parseInt(metal.color.slice(1), 16);
+    return 0xc084fc;
+  }
+
+  // ---- ESTILO MISTBORN ----
+  // Tema do cenário: 'stormlight' (gemas + tempestade), 'mistborn' (moedas + cinzas e bruma), 'misto'
+  let _theme = 'stormlight';
+  let _bgStorm = null, _bgAsh = null;
+  const _bgMist = [];
+  let _ambientLight = null, _keyLight = null;
+  let _envMap = null;
+  let _lineGlowTexture = null;
+  const _coinFaceCache = {};
+
+  const COIN_LOCKED   = 0x6b6d76;
+  const ALLO_LINE     = 0x7cc4ff; // linhas azuis que um Alomântico vê ao queimar ferro/aço
+  const FERU_LINE     = 0xe0955a; // cobre das mentemetais
+  const ASH_LINE      = 0x9fb3c8;
+
+  // Árvores desenhadas como moedas: Artes Metálicas, caminhos Metalnascidos,
+  // Kandra/Sangue-Koloss e — no cenário Mistborn — as trilhas heroicas.
+  function nodeStyleFor(cls) {
+    if (CosData.METAL_CLASSES && CosData.METAL_CLASSES.includes(cls)) return 'metal';
+    if (CosData.MISTBORN_ANCESTRY_CLASSES && CosData.MISTBORN_ANCESTRY_CLASSES.includes(cls)) return 'metal';
+    if (_theme === 'mistborn' && CosData.CLASSES.includes(cls)) return 'metal';
+    return 'gem';
+  }
+
+  function lerpHex(a, b, t) {
+    const ca = new THREE.Color(a), cb = new THREE.Color(b);
+    return ca.lerp(cb, t).getHex();
+  }
+
+  // Mapa de ambiente procedural — dá brilho metálico às moedas sem assets externos
+  function getEnvMap() {
+    if (_envMap || !renderer) return _envMap;
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 128;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 128);
+    g.addColorStop(0,    '#cfd6e0');
+    g.addColorStop(0.35, '#6b6f78');
+    g.addColorStop(0.55, '#2a2a30');
+    g.addColorStop(1,    '#151418');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 128);
+    // "sol vermelho" e janelas de luz para reflexos
+    const sun = ctx.createRadialGradient(70, 30, 2, 70, 30, 40);
+    sun.addColorStop(0, 'rgba(255,190,140,1)');
+    sun.addColorStop(1, 'rgba(255,120,80,0)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(170, 18, 40, 10);
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    _envMap = pmrem.fromEquirectangular(tex).texture;
+    tex.dispose();
+    pmrem.dispose();
+    return _envMap;
+  }
+
+  // Textura do brilho das linhas alomânticas (claro no centro, some nas bordas)
+  function getLineGlowTexture() {
+    if (_lineGlowTexture) return _lineGlowTexture;
+    const c = document.createElement('canvas');
+    c.width = 4; c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0,   'rgba(255,255,255,0)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+    g.addColorStop(0.5, 'rgba(255,255,255,1)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1,   'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 4, 64);
+    _lineGlowTexture = new THREE.CanvasTexture(c);
+    return _lineGlowTexture;
+  }
+
+  // Arte da moeda padrão de Scadrial (recortada de Metals/Moeda_Frente_Verso.svg)
+  const COIN_ART = { front: 'svg/Mistborn/Moeda_Frente.svg', back: 'svg/Mistborn/Moeda_Verso.svg' };
+  const _imgCache = {};
+  function loadImage(src) {
+    if (!_imgCache[src]) {
+      _imgCache[src] = new Promise(res => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = src;
+      });
+    }
+    return _imgCache[src];
+  }
+
+  // A arte da moeda tem traços finos demais para uma moeda pequena na tela:
+  // engrossa todos os stroke-width antes de rasterizar
+  function loadThickSvg(src, factor) {
+    const key = src + '@' + factor;
+    if (!_imgCache[key]) {
+      _imgCache[key] = fetch(src).then(r => r.text()).then(text => {
+        const thick = text.replace(/stroke-width\s*:\s*([\d.]+)/g, (_, w) => `stroke-width:${(parseFloat(w) * factor).toFixed(3)}`)
+                          .replace(/stroke-width="([\d.]+)"/g, (_, w) => `stroke-width="${(parseFloat(w) * factor).toFixed(3)}"`);
+        const url = URL.createObjectURL(new Blob([thick], { type: 'image/svg+xml' }));
+        return new Promise(res => {
+          const img = new Image();
+          img.onload = () => res(img);
+          img.onerror = () => res(null);
+          img.src = url;
+        });
+      }).catch(() => null);
+    }
+    return _imgCache[key];
+  }
+
+  // Glifo do metal como marca d'água atrás da árvore dele (textura branca; a cor vem do sprite)
+  const _glyphBgCache = {};
+  function getGlyphBgTexture(svg) {
+    if (_glyphBgCache[svg]) return _glyphBgCache[svg];
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const tex = smoothTexture(new THREE.CanvasTexture(canvas));
+    _glyphBgCache[svg] = tex;
+    loadImage(svg).then(img => {
+      if (!img) return;
+      drawEngraving(canvas.getContext('2d'), img, 0, 0, size, size);
+      tex.needsUpdate = true;
+    });
+    return tex;
+  }
+
+  function addTreeGlyph(cls, pts) {
+    const metal = CosData.getMetalOfTree && CosData.getMetalOfTree(cls);
+    pts = pts.filter(Boolean);
+    if (!metal || !pts.length) return;
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+    const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+    const ext = Math.max(...pts.map(p => Math.hypot(p.x - cx, p.y - cy)));
+    const size = Math.min(7, Math.max(2.6, ext * 2.0)); // do tamanho do leque, sem invadir muito os vizinhos
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlyphBgTexture(metal.svg),
+      color: parseInt(metal.color.slice(1), 16),
+      transparent: true,
+      opacity: 0.24,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }));
+    sprite.position.set(cx, cy, -0.4);
+    sprite.scale.set(size, size, 1);
+    mainGroup.add(sprite);
+  }
+
+  // Mipmaps + anisotropia: a gravação encolhe sem serrilhar nem "piscar"
+  function smoothTexture(tex) {
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    if (renderer) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
+  // Desenha uma imagem de traço preto como gravação branca (a cor vem do material)
+  function drawEngraving(ctx, img, x, y, w, h) {
+    const off = document.createElement('canvas');
+    off.width = ctx.canvas.width; off.height = ctx.canvas.height;
+    const octx = off.getContext('2d');
+    octx.drawImage(img, x, y, w, h);
+    octx.globalCompositeOperation = 'source-in';
+    octx.fillStyle = '#ffffff';
+    octx.fillRect(0, 0, off.width, off.height);
+    ctx.drawImage(off, 0, 0);
+  }
+
+  // Face gravada da moeda:
+  //  - talentos-chave/raízes (rank 0, fora das Artes): frente da moeda de Scadrial;
+  //  - demais: verso da moeda com o glifo do metal (Artes Metálicas) ou marcas de rank no centro.
+  function getCoinFaceTexture(skill, cls) {
+    const metal = CosData.getMetalOfTree && CosData.getMetalOfTree(cls);
+    const front = skill.rank === 0 && !metal;
+    const key = front ? 'front' : 'back:' + (metal ? metal.svg + (skill.isPower ? ':power' : '') : 'rank' + skill.rank);
+    if (_coinFaceCache[key]) return _coinFaceCache[key];
+
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const tex = smoothTexture(new THREE.CanvasTexture(canvas));
+    _coinFaceCache[key] = tex;
+
+    (async () => {
+      const coin = await loadThickSvg(front ? COIN_ART.front : COIN_ART.back, 2.2);
+      if (coin) drawEngraving(ctx, coin, 0, 0, size, size);
+      if (!front) {
+        if (metal) {
+          const glyph = await loadImage(metal.svg);
+          const g = skill.isPower ? 0.56 : 0.44; // o poder ganha o glifo maior
+          if (glyph) drawEngraving(ctx, glyph, size * (1 - g) / 2, size * (1 - g) / 2, size * g, size * g);
+        } else {
+          // Marcas de rank no centro livre do verso
+          ctx.fillStyle = '#ffffff';
+          const n = Math.max(1, skill.rank);
+          const gap = 74;
+          for (let i = 0; i < n; i++) {
+            ctx.beginPath();
+            ctx.arc(size / 2 + (i - (n - 1) / 2) * gap, size / 2, 27, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      tex.needsUpdate = true;
+    })();
+    return tex;
+  }
 
   const COLOR_LOCKED    = 0x3a3845;
   const COLOR_UNLOCKED  = 0xd4a853;
@@ -152,9 +380,14 @@ const SkillRenderer = (() => {
     const point = new THREE.PointLight(0x4a9eff, 1.5, 50);
     point.position.set(0, 5, 10);
     scene.add(point);
+    _ambientLight = ambient;
+    _keyLight = point;
 
-    // Background particles (storm dust)
+    // Background particles (storm dust) + cinzas e bruma de Scadrial
     createBackgroundParticles();
+    createAshParticles();
+    createMistLayer();
+    setTheme(_theme);
 
     // Raycaster
     raycaster = new THREE.Raycaster();
@@ -185,8 +418,8 @@ const SkillRenderer = (() => {
     container.addEventListener('wheel', e => {
       if (e.target.tagName !== 'CANVAS') return;
       e.preventDefault();
-      const zoomMax = _viewMode === 'all' ? 90 : 55;
-      const zoomMin = _viewMode === 'all' ? 10 : 5;
+      const zoomMax = _viewMode !== 'single' ? 95 : 55;
+      const zoomMin = _viewMode !== 'single' ? 10 : 5;
       camera.position.z = Math.max(zoomMin, Math.min(zoomMax, camera.position.z + e.deltaY * 0.03));
     }, { passive: false });
 
@@ -258,8 +491,8 @@ const SkillRenderer = (() => {
         const delta = _touch.lastDist - dist;
         _touch.lastDist = dist;
         const z1 = camera.position.z;
-        const zoomMax = _viewMode === 'all' ? 90 : 55;
-        const zoomMin = _viewMode === 'all' ? 10 : 5;
+        const zoomMax = _viewMode !== 'single' ? 95 : 55;
+        const zoomMin = _viewMode !== 'single' ? 10 : 5;
         const z2 = Math.max(zoomMin, Math.min(zoomMax, z1 + delta * 0.12));
         // Zoom em direção ao ponto médio da pinça
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
@@ -363,7 +596,71 @@ const SkillRenderer = (() => {
 
     points.userData.speeds = Array.from({length: count}, () => Math.random() * 0.2 + 0.05);
     points.userData.type = 'bgParticles';
+    _bgStorm = points;
   }
+
+  // Cinzas caindo dos montes de cinza de Scadrial (descem devagar, balançando)
+  function createAshParticles() {
+    const count = 420;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i*3]   = (Math.random() - 0.5) * 70;
+      positions[i*3+1] = (Math.random() - 0.5) * 44;
+      positions[i*3+2] = (Math.random() - 0.5) * 22 - 4;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0x8d8a86,
+      size: 0.11,
+      map: getSmokeTexture(),
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.userData.type = 'ash';
+    points.userData.speeds = Array.from({ length: count }, () => Math.random() * 0.35 + 0.12);
+    points.userData.phase  = Array.from({ length: count }, () => Math.random() * Math.PI * 2);
+    points.visible = false;
+    scene.add(points);
+    _bgAsh = points;
+  }
+
+  // Bruma: grandes véus translúcidos que deslizam lentamente pela cena
+  function createMistLayer() {
+    for (let i = 0; i < 16; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: getSmokeTexture(),
+        color: 0xaeb8c4,
+        transparent: true,
+        opacity: 0.035 + Math.random() * 0.035,
+        depthWrite: false,
+      });
+      const s = new THREE.Sprite(mat);
+      const sc = 14 + Math.random() * 16;
+      s.scale.set(sc * 1.8, sc, 1);
+      s.position.set((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 36, -6 - Math.random() * 10);
+      s.userData = { drift: (Math.random() * 0.6 + 0.25) * (Math.random() < 0.5 ? -1 : 1), bob: Math.random() * Math.PI * 2, baseOpacity: mat.opacity };
+      s.visible = false;
+      scene.add(s);
+      _bgMist.push(s);
+    }
+  }
+
+  function setTheme(theme) {
+    _theme = theme || 'stormlight';
+    if (!scene) return;
+    const mist = _theme === 'mistborn';
+    renderer.setClearColor(mist ? 0x0e0c0e : 0x0a0b10, 1);
+    scene.fog = new THREE.FogExp2(mist ? 0x14100f : 0x0a0b10, 0.02);
+    if (_bgStorm) _bgStorm.visible = _theme !== 'mistborn';
+    if (_bgAsh)   _bgAsh.visible   = _theme !== 'stormlight';
+    for (const m of _bgMist) m.visible = _theme !== 'stormlight';
+    if (_ambientLight) _ambientLight.color.set(mist ? 0x4a3a3a : 0x223355);
+    if (_keyLight)     _keyLight.color.set(mist ? 0xffa27a : 0x4a9eff);
+  }
+  function getTheme() { return _theme; }
 
   // ---- BUILD TREE FOR A CLASS ----
   // keepView: if true, preserves current pan/zoom position
@@ -400,7 +697,7 @@ const SkillRenderer = (() => {
       const posTo = positions[skill.id];
       if (!posTo) continue;
       for (const depName of skill.deps) {
-        const parent = CosData.findSkillByName(depName, cls);
+        const parent = CosData.findSkillByName(depName, cls, skill.sub);
         if (parent && positions[parent.id]) {
           createConnection(positions[parent.id], posTo, skill, parent, unlockedSkills, cls);
         }
@@ -439,7 +736,13 @@ const SkillRenderer = (() => {
   // maxLocalRadius: if set, clamps nodes to this distance from origin (used in all-view)
   function computeLayout(cls, skills, childrenMap, root, baseAngle, maxLocalRadius) {
     const positions = {};
-    const subs = CosData.SUBCLASSES[cls] || CosData.RADIANT_SUBCLASSES[cls] || CosData.ADDITIONAL_SUBCLASSES[cls] || [];
+    const isMetalTree = CosData.METAL_CLASSES && CosData.METAL_CLASSES.includes(cls);
+    const isHeroicTree = CosData.CLASSES.includes(cls);
+    const subs = isMetalTree ? [cls]
+      : (CosData.SUBCLASSES[cls] || CosData.RADIANT_SUBCLASSES[cls] || CosData.ADDITIONAL_SUBCLASSES[cls] || []);
+    // Moedas são opacas: sobreposição aparece mais que nas gemas de vidro, então a
+    // constelação delas relaxa com mais força e encolhe por inteiro na visão "Todas"
+    const coinTree = nodeStyleFor(cls) === 'metal';
     const rng = seededRng(classToSeed(cls));
     const subCount = subs.length;
 
@@ -449,7 +752,9 @@ const SkillRenderer = (() => {
     // When baseAngle is given (all-view), radiate away from circle center.
     // Otherwise fan upward for single-view.
     const arcCenter = baseAngle !== undefined ? baseAngle : Math.PI / 2;
-    const arcSpan   = Math.PI * 0.68;
+    // Moedas na visão "Todas": leque mais fechado (especializações mais juntas),
+    // a árvore cresce para fora em vez de para os lados
+    const arcSpan   = Math.PI * (coinTree && baseAngle !== undefined ? 0.46 : 0.68);
     const arcStart  = arcCenter - arcSpan / 2;
     const arcTotal  = arcSpan;
     const subAngles = [];
@@ -469,7 +774,7 @@ const SkillRenderer = (() => {
 
       rank1Skills.forEach((r1, branchIdx) => {
         // Offset each rank1 branch slightly from the main direction
-        const branchSpread = 0.35;
+        const branchSpread = coinTree ? 0.3 : 0.35;
         const offsetAngle = branchAngle +
           (branchIdx - (rank1Skills.length - 1) / 2) * branchSpread;
 
@@ -483,11 +788,12 @@ const SkillRenderer = (() => {
           visited.add(skill.id);
 
           // Distance from parent with slight variation
-          const dist = RANK_Y_SPACING * (0.85 + rng() * 0.3);
+          // Moedas: distância e curva mais regulares, para os galhos terem o mesmo espaçamento
+          const dist = RANK_Y_SPACING * (coinTree ? 0.95 + rng() * 0.1 : 0.85 + rng() * 0.3);
 
           // Organic wobble: deviate from PARENT'S actual direction (accumulated),
           // with a gentle pull back toward the branch origin to avoid full U-turns
-          const wobble = (rng() - 0.5) * 0.9;
+          const wobble = (rng() - 0.5) * (coinTree ? 0.45 : 0.9);
           const pullBack = (offsetAngle - parentAngle) * 0.1;
           const angle = parentAngle + wobble + pullBack;
 
@@ -496,7 +802,7 @@ const SkillRenderer = (() => {
           const z = (rng() - 0.5) * 0.4;
 
           // Clamp to max radius (all-view: keeps tree within its sector)
-          if (maxLocalRadius !== undefined) {
+          if (maxLocalRadius !== undefined && !coinTree) {
             const r = Math.sqrt(x * x + y * y);
             if (r > maxLocalRadius) { x *= maxLocalRadius / r; y *= maxLocalRadius / r; }
           }
@@ -504,8 +810,9 @@ const SkillRenderer = (() => {
           positions[skill.id] = { x, y, z };
           layoutEdges.push({ aId: parentId, bId: skill.id });
 
-          const kids = childrenMap[skill.name] || [];
-          const validKids = kids.filter(k => !visited.has(k.id));
+          // Trilhas heroicas indexam filhos por id (nomes repetidos entre especializações)
+          const kids = childrenMap[skill.id] || childrenMap[skill.name] || [];
+          const validKids = kids.filter(k => !visited.has(k.id) && (!isHeroicTree || k.sub === sub));
 
           if (validKids.length === 1) {
             queue.push({ skill: validKids[0], parentX: x, parentY: y, depth: depth + 1, parentAngle: angle, parentId: skill.id });
@@ -530,9 +837,10 @@ const SkillRenderer = (() => {
     // Relaxation: push apart nodes that are too close (node-node) and
     // push nodes away from edges they don't belong to (node-edge)
     const allIds = Object.keys(positions);
-    const minNodeDist = 1.8;
-    const minEdgeDist = 1.6;
-    for (let iter = 0; iter < 20; iter++) {
+    const minNodeDist = coinTree ? 2.1 : 1.8;
+    const minEdgeDist = coinTree ? 1.75 : 1.6;
+    const iterations  = coinTree ? 45 : 20;
+    for (let iter = 0; iter < iterations; iter++) {
       // Node-to-node repulsion
       for (let i = 0; i < allIds.length; i++) {
         for (let j = i + 1; j < allIds.length; j++) {
@@ -580,6 +888,16 @@ const SkillRenderer = (() => {
             node.y += ny * push;
           }
         }
+      }
+    }
+
+    // Visão "Todas" com moedas: escala a constelação inteira em vez de achatar
+    // cada nó contra a borda do setor (que empilhava moedas)
+    if (coinTree && maxLocalRadius !== undefined) {
+      const maxR = Math.max(0.01, ...Object.values(positions).map(p => Math.hypot(p.x, p.y)));
+      if (maxR > maxLocalRadius) {
+        const k = maxLocalRadius / maxR;
+        for (const p of Object.values(positions)) { p.x *= k; p.y *= k; }
       }
     }
 
@@ -631,7 +949,119 @@ const SkillRenderer = (() => {
   }
 
   // ---- CREATE NODE (Stormlight Sphere with inner Gemstone) ----
+  // ---- CREATE NODE (Moeda metálica — estilo Mistborn) ----
+  // Mantém a mesma interface dos nós-gema (mesh, crystalMesh, crystalMat, mat,
+  // glowMesh, glowMat) para que hover, transições e updateStates funcionem igual.
+  //   mesh        → a moeda (raycast)
+  //   crystalMesh → a face gravada (filha da moeda)
+  //   crystalMat  → material metálico da moeda (tem emissive)
+  //   mat         → material da gravação
+  // Bloqueadas continuam legíveis: metal claro puxado para a cor da árvore,
+  // gravação visível e um leve brilho próprio (antes ficavam quase pretas).
+  function coinColors(tint, isUnlocked, canUnlock) {
+    return {
+      coin:  isUnlocked ? tint : canUnlock ? lerpHex(tint, COIN_LOCKED, 0.3) : lerpHex(tint, COIN_LOCKED, 0.62),
+      face:  isUnlocked ? lerpHex(tint, 0xffffff, 0.55) : canUnlock ? lerpHex(tint, 0xffffff, 0.35) : lerpHex(tint, 0xc8ccd4, 0.6),
+      emissive: isUnlocked ? 0.30 : canUnlock ? 0.14 : 0.07,
+      faceOpacity: isUnlocked ? 0.95 : canUnlock ? 0.9 : 0.75,
+      coinOpacity: isUnlocked ? 1 : canUnlock ? 1 : 0.95,
+    };
+  }
+
+  // Na visão "Todas" as árvores são reduzidas; as moedas encolhem junto
+  let _coinScale = 1;
+
+  function createMetalNode(skill, pos, isUnlocked, canUnlock, cls) {
+    const base = treeColor(cls);
+    // Trilhas heroicas no tema Mistborn ganham tom mais metálico
+    const tint = (CosData.CLASSES.includes(cls)) ? lerpHex(base, 0xa7adb5, 0.35) : base;
+    const isRoot = skill.rank === 0;
+    const r = NODE_RADIUS * (isRoot ? 1.3 : 0.98) * _coinScale;
+    const c = coinColors(tint, isUnlocked, canUnlock);
+
+    const coinMat = new THREE.MeshStandardMaterial({
+      color: c.coin,
+      metalness: 0.9,
+      roughness: isUnlocked ? 0.3 : canUnlock ? 0.4 : 0.48,
+      envMap: getEnvMap(),
+      envMapIntensity: isUnlocked ? 1.3 : canUnlock ? 1.0 : 0.85,
+      emissive: new THREE.Color(tint).multiplyScalar(c.emissive),
+      transparent: true,
+      opacity: c.coinOpacity,
+    });
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * 0.26, 48, 1), coinMat);
+    coin.rotation.x = Math.PI / 2;                 // face voltada para a câmera
+    coin.rotation.z = (Math.random() - 0.5) * 0.3; // cada moeda levemente inclinada
+    coin.position.set(pos.x, pos.y, pos.z);
+    coin.renderOrder = 1;
+    mainGroup.add(coin);
+
+    // Aro saliente
+    const rimMat = new THREE.MeshStandardMaterial({
+      color: lerpHex(c.coin, 0xffffff, 0.15), metalness: 1, roughness: 0.25,
+      envMap: getEnvMap(), envMapIntensity: 1.1, transparent: true, opacity: c.coinOpacity,
+    });
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.08, 8, 48), rimMat);
+    rim.rotation.x = Math.PI / 2;
+    coin.add(rim);
+
+    // Face gravada (glifo do metal ou marcas de rank)
+    const faceMat = new THREE.MeshBasicMaterial({
+      map: getCoinFaceTexture(skill, cls),
+      color: c.face,
+      transparent: true,
+      opacity: c.faceOpacity,
+      depthWrite: false,
+    });
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(r * 1.9, r * 1.9), faceMat);
+    face.position.set(0, r * 0.14, 0);
+    face.rotation.x = -Math.PI / 2;
+    face.renderOrder = 2;
+    coin.add(face);
+
+    // Brilho de "queima" (mais baixo e quente que o das gemas)
+    const glowMat = new THREE.SpriteMaterial({
+      map: getGlowTexture(),
+      color: tint,
+      transparent: true,
+      opacity: (isUnlocked ? 0.45 : canUnlock ? 0.2 : 0.09) * _config.nodeGlow,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glowMesh = new THREE.Sprite(glowMat);
+    const gs = (isUnlocked ? 1.9 : canUnlock ? 1.3 : 1.0) * (isRoot ? 1.35 : 1) * _coinScale;
+    glowMesh.scale.set(gs, gs, 1);
+    glowMesh.position.set(pos.x, pos.y, pos.z - 0.05);
+    mainGroup.add(glowMesh);
+
+    coin.userData = { skill, isUnlocked, canUnlock };
+    const obj = {
+      mesh: coin, skill, glowMesh, crystalMesh: face, crystalMat: coinMat, pos, mat: faceMat, glowMat,
+      baseColor: tint, rootColor: tint, baseGlassOpacity: 0.3,
+      style: 'metal', tint, rimMat, spin: Math.random() * Math.PI * 2, coinScale: _coinScale,
+    };
+    nodeObjects.push(obj);
+  }
+
+  // Atualiza cores de uma moeda conforme o estado
+  function paintMetalNode(obj, isUnlocked, canUnlock) {
+    const c = coinColors(obj.tint, isUnlocked, canUnlock);
+    obj.crystalMat.color.setHex(c.coin);
+    obj.crystalMat.emissive = new THREE.Color(obj.tint).multiplyScalar(c.emissive);
+    obj.crystalMat.opacity = c.coinOpacity;
+    obj.crystalMat.roughness = isUnlocked ? 0.3 : canUnlock ? 0.4 : 0.48;
+    obj.crystalMat.envMapIntensity = isUnlocked ? 1.3 : canUnlock ? 1.0 : 0.85;
+    obj.rimMat.color.setHex(lerpHex(c.coin, 0xffffff, 0.15));
+    obj.rimMat.opacity = c.coinOpacity;
+    obj.mat.color.setHex(c.face);
+    obj.mat.opacity = c.faceOpacity;
+    obj.glowMat.color.setHex(obj.tint);
+    obj.glowMat.opacity = (isUnlocked ? 0.45 : canUnlock ? 0.2 : 0.09) * _config.nodeGlow;
+    obj.baseColor = obj.tint;
+  }
+
   function createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues) {
+    if (nodeStyleFor(cls) === 'metal') return createMetalNode(skill, pos, isUnlocked, canUnlock, cls);
     const classColor = COLOR_MAP[cls] || COLOR_UNLOCKED;
     const _gemTint = _config.gemColorOverride;
     const baseColor = (isUnlocked || canUnlock) ? (_gemTint || classColor) : COLOR_LOCKED;
@@ -735,8 +1165,76 @@ const SkillRenderer = (() => {
     if (isUnlocked) createGemEmitter(obj);
   }
 
+  // ---- CREATE CONNECTION (Linha Alomântica — estilo Mistborn) ----
+  // Uma linha fina e nítida + um véu de brilho; ativa, pisca como as linhas azuis
+  // que o Alomântico vê e leva faíscas do pai para o filho. Feruquemia usa cobre.
+  function metalLineColor(cls) {
+    const art = CosData.getArtOfTree && CosData.getArtOfTree(cls);
+    if (art === 'feru') return FERU_LINE;
+    if (art === 'allo') return ALLO_LINE;
+    if (cls === 'Feruquemista' || cls === 'Ferroso') return FERU_LINE;
+    if (CosData.METAL_CLASSES && CosData.METAL_CLASSES.includes(cls)) return ALLO_LINE;
+    return ASH_LINE;
+  }
+
+  function createMetalConnection(from, to, childSkill, parentSkill, unlockedSkills, cls) {
+    const isActive = unlockedSkills.has(childSkill.id) && unlockedSkills.has(parentSkill.id);
+    const lineColor = metalLineColor(cls);
+    // Bloqueada: tom da própria árvore, para cada ramo "pertencer" ao seu metal/trilha
+    const lockedColor = lerpHex(treeColor(cls), 0x5f6f86, 0.4);
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.hypot(dx, dy);
+
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(from.x, from.y, from.z), new THREE.Vector3(to.x, to.y, to.z),
+    ]);
+    const mat = new THREE.LineBasicMaterial({
+      color: isActive ? lineColor : lockedColor,
+      transparent: true,
+      opacity: (isActive ? 0.9 : 0.55) * _config.lineOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geo, mat);
+    mainGroup.add(line);
+
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: getLineGlowTexture(),
+      color: lineColor,
+      transparent: true,
+      opacity: isActive ? 0.4 * _config.lineOpacity : 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(len, 0.01), 0.26), glowMat);
+    quad.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2 - 0.02);
+    quad.rotation.z = Math.atan2(dy, dx);
+    mainGroup.add(quad);
+
+    lineObjects.push({ line, from, to, mat, isActive, skill: childSkill, parentSkill, cls,
+      style: 'metal', glowMat, lineColor, lockedColor, phase: Math.random() * 10 });
+    if (isActive) createSparksAlongLine(from, to, lineColor);
+  }
+
+  // Faíscas que correm pela linha alomântica (direção pai → filho)
+  function createSparksAlongLine(from, to, color) {
+    for (let i = 0; i < 2; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: getGlowTexture(), color, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(0.34, 0.34, 1);
+      mainGroup.add(sprite);
+      smokeParticles.push({ type: 'spark', mesh: sprite, from, to,
+        travelOffset: i / 2 + Math.random() * 0.2, travelSpeed: 0.28 + Math.random() * 0.12 });
+    }
+  }
+
   // ---- CREATE CONNECTION (Smoke Trail Line) ----
   function createConnection(from, to, childSkill, parentSkill, unlockedSkills, cls) {
+    if (nodeStyleFor(cls) === 'metal') return createMetalConnection(from, to, childSkill, parentSkill, unlockedSkills, cls);
     const isActive = unlockedSkills.has(childSkill.id) && unlockedSkills.has(parentSkill.id);
     const color = isActive ? COLOR_MAP[cls] : COLOR_LOCKED;
 
@@ -857,6 +1355,8 @@ const SkillRenderer = (() => {
     }
     nodeObjects = [];
     lineObjects = [];
+    _spokes = [];
+    _coinScale = 1;
     
     // MANTÉM as partículas de trail para que terminem de desaparecer na scene.
     // As fumaças normais ('helix' e 'gem') são apagadas pois pertenciam ao mainGroup.
@@ -873,6 +1373,23 @@ const SkillRenderer = (() => {
     // Animate node glow pulsing + crystal rotation
     for (const obj of nodeObjects) {
       const pulse = Math.sin(time * 2 + obj.skill.id * 0.5) * 0.5 + 0.5;
+
+      if (obj.style === 'metal') {
+        // Moeda balança devagar para pegar a luz; queimando, a borda tremula
+        obj.mesh.rotation.y = Math.sin(time * 0.6 + obj.spin) * 0.35;
+        const ud = obj.mesh.userData;
+        if (ud.isUnlocked) {
+          const flicker = 0.75 + Math.sin(time * 7.3 + obj.spin) * 0.12 + Math.sin(time * 13.1 + obj.skill.id) * 0.08;
+          obj.glowMat.opacity = 0.42 * flicker * _config.nodeGlow;
+          const gs = ((obj.skill.rank === 0 ? 2.5 : 1.9) + pulse * 0.25) * (obj.coinScale || 1);
+          obj.glowMesh.scale.set(gs, gs, 1);
+          obj.crystalMat.emissive = new THREE.Color(obj.tint).multiplyScalar(0.22 + flicker * 0.12);
+        } else if (ud.canUnlock) {
+          obj.glowMat.opacity = (0.08 + pulse * 0.12) * _config.nodeGlow;
+          obj.crystalMat.emissive = new THREE.Color(obj.tint).multiplyScalar(0.05 + pulse * 0.08);
+        }
+        continue;
+      }
 
       // Slow crystal tumble
       obj.crystalMesh.rotation.x += 0.003;
@@ -944,6 +1461,17 @@ const SkillRenderer = (() => {
         p.mesh.material.opacity = Math.sin(p.life * Math.PI) * p.maxOpacity;
         const scale = 0.12 + p.life * 0.32;
         p.mesh.scale.set(scale, scale, 1);
+      } else if (p.type === 'spark') {
+        // Faísca alomântica percorrendo a linha, some nas pontas
+        const t = (p.travelOffset + time * p.travelSpeed) % 1.0;
+        p.mesh.position.set(
+          p.from.x + (p.to.x - p.from.x) * t,
+          p.from.y + (p.to.y - p.from.y) * t,
+          p.from.z + (p.to.z - p.from.z) * t + 0.02,
+        );
+        p.mesh.material.opacity = Math.sin(t * Math.PI) * 0.85;
+        const s = 0.22 + Math.sin(t * Math.PI) * 0.16;
+        p.mesh.scale.set(s, s, 1);
       } else if (p.type === 'trail') {
         // Novo Star Trail da troca de classe
         p.life -= p.decay;
@@ -959,30 +1487,59 @@ const SkillRenderer = (() => {
       }
     }
 
+    // Linhas alomânticas ativas: tremulam como as linhas azuis vistas ao queimar aço
+    for (const l of lineObjects) {
+      if (l.style !== 'metal' || !l.isActive) continue;
+      const f = 0.78 + Math.sin(time * 9 + l.phase) * 0.12 + Math.sin(time * 23 + l.phase * 3) * 0.1;
+      l.glowMat.opacity = 0.4 * f * _config.lineOpacity;
+    }
+
     // Animate background particles
-    scene.traverse(obj => {
-      if (obj.isPoints && obj.userData.type === 'bgParticles') {
-        const pos = obj.geometry.attributes.position.array;
-        const speeds = obj.userData.speeds;
-        for (let i = 0; i < speeds.length; i++) {
-          pos[i*3+1] += speeds[i] * 0.005;
-          pos[i*3]   += Math.sin(time + i) * 0.001;
-          if (pos[i*3+1] > 20) pos[i*3+1] = -20;
-        }
-        obj.geometry.attributes.position.needsUpdate = true;
+    if (_bgStorm && _bgStorm.visible) {
+      const pos = _bgStorm.geometry.attributes.position.array;
+      const speeds = _bgStorm.userData.speeds;
+      for (let i = 0; i < speeds.length; i++) {
+        pos[i*3+1] += speeds[i] * 0.005;
+        pos[i*3]   += Math.sin(time + i) * 0.001;
+        if (pos[i*3+1] > 20) pos[i*3+1] = -20;
       }
-    });
+      _bgStorm.geometry.attributes.position.needsUpdate = true;
+    }
+    if (_bgAsh && _bgAsh.visible) {
+      // Cinzas descem e balançam de leve
+      const pos = _bgAsh.geometry.attributes.position.array;
+      const { speeds, phase } = _bgAsh.userData;
+      for (let i = 0; i < speeds.length; i++) {
+        pos[i*3+1] -= speeds[i] * 0.012;
+        pos[i*3]   += Math.sin(time * 0.7 + phase[i]) * 0.004 + 0.002;
+        if (pos[i*3+1] < -22) { pos[i*3+1] = 22; pos[i*3] = (Math.random() - 0.5) * 70; }
+        if (pos[i*3] > 36) pos[i*3] = -36;
+      }
+      _bgAsh.geometry.attributes.position.needsUpdate = true;
+    }
+    for (const m of _bgMist) {
+      if (!m.visible) continue;
+      m.position.x += m.userData.drift * 0.006;
+      m.position.y += Math.sin(time * 0.15 + m.userData.bob) * 0.002;
+      if (m.position.x > 45) m.position.x = -45;
+      if (m.position.x < -45) m.position.x = 45;
+      m.material.opacity = m.userData.baseOpacity * (0.75 + Math.sin(time * 0.2 + m.userData.bob) * 0.25);
+    }
 
     // Raycasting for hover
     raycaster.setFromCamera(mouse, camera);
     const meshes = nodeObjects.flatMap(n => [n.mesh, n.crystalMesh]);
     const intersects = raycaster.intersectObjects(meshes);
 
-    // Reset previous hover
+    // Reset previous hover (moedas: a face é filha da moeda, então só a moeda escala)
     if (hoveredNode) {
-      const scale = hoveredNode.skill.rank === 0 ? 1.5 : 1;
-      hoveredNode.mesh.scale.setScalar(scale);
-      hoveredNode.crystalMesh.scale.setScalar(scale);
+      if (hoveredNode.style === 'metal') {
+        hoveredNode.mesh.scale.setScalar(1);
+      } else {
+        const scale = hoveredNode.skill.rank === 0 ? 1.5 : 1;
+        hoveredNode.mesh.scale.setScalar(scale);
+        hoveredNode.crystalMesh.scale.setScalar(scale);
+      }
       hoveredNode = null;
     }
 
@@ -991,6 +1548,13 @@ const SkillRenderer = (() => {
       const nodeObj = nodeObjects.find(n => n.mesh === hit || n.crystalMesh === hit);
       if (nodeObj) {
         hoveredNode = nodeObj;
+        if (nodeObj.style === 'metal') {
+          nodeObj.mesh.scale.setScalar(1.2);
+          document.body.style.cursor = 'pointer';
+          if (onNodeHover) onNodeHover(nodeObj.skill, intersects[0]);
+          renderer.render(scene, camera);
+          return;
+        }
         const baseScale = nodeObj.skill.rank === 0 ? 1.5 : 1;
         nodeObj.mesh.scale.setScalar(baseScale * 1.2);
         nodeObj.crystalMesh.scale.setScalar(baseScale * 1.2);
@@ -1009,11 +1573,21 @@ const SkillRenderer = (() => {
   function updateStates(unlockedSkills, periciaValues, canUnlockFn) {
     if (canUnlockFn) _canUnlockFn = canUnlockFn;
 
+    for (const sp of _spokes) paintSpoke(sp, unlockedSkills);
+
     // Update connection lines
     for (const obj of lineObjects) {
       if (!obj.skill) continue;
       const wasActive = obj.isActive;
       const isActive  = unlockedSkills.has(obj.skill.id) && (!obj.parentSkill || unlockedSkills.has(obj.parentSkill.id));
+      if (obj.style === 'metal') {
+        obj.mat.color.setHex(isActive ? obj.lineColor : obj.lockedColor);
+        obj.mat.opacity = (isActive ? 0.9 : 0.55) * _config.lineOpacity;
+        obj.glowMat.opacity = isActive ? 0.4 * _config.lineOpacity : 0;
+        if (!wasActive && isActive) createSparksAlongLine(obj.from, obj.to, obj.lineColor);
+        obj.isActive = isActive;
+        continue;
+      }
       const cls       = obj.cls || currentClass || obj.skill.cls;
       const color     = isActive ? (COLOR_MAP[cls] || COLOR_LOCKED) : COLOR_LOCKED;
       obj.mat.color.setHex(color);
@@ -1028,6 +1602,12 @@ const SkillRenderer = (() => {
       const wasUnlocked = obj.mesh.userData.isUnlocked;
       const isUnlocked = unlockedSkills.has(obj.skill.id);
       const canUnlock = !isUnlocked && _canUnlockFn ? _canUnlockFn(obj.skill) : false;
+      if (obj.style === 'metal') {
+        obj.mesh.userData.isUnlocked = isUnlocked;
+        obj.mesh.userData.canUnlock = canUnlock;
+        paintMetalNode(obj, isUnlocked, canUnlock);
+        continue;
+      }
       obj.mesh.userData.isUnlocked = isUnlocked;
       if (!wasUnlocked && isUnlocked) createGemEmitter(obj);
       obj.mesh.userData.canUnlock = canUnlock;
@@ -1085,17 +1665,21 @@ const SkillRenderer = (() => {
     Object.assign(_config, newConfig);
     if (newConfig.lineOpacity !== undefined) {
       for (const obj of lineObjects) {
-        obj.mat.opacity = (obj.isActive ? 0.5 : 0.12) * _config.lineOpacity;
+        const base = obj.style === 'metal' ? (obj.isActive ? 0.9 : 0.55) : (obj.isActive ? 0.5 : 0.12);
+        obj.mat.opacity = base * _config.lineOpacity;
       }
     }
+    // Vidro e cor das gemas não se aplicam às moedas
     if (newConfig.glassOpacity !== undefined) {
       for (const obj of nodeObjects) {
+        if (obj.style === 'metal') continue;
         const ratio = newConfig.glassOpacity / 0.3;
         obj.mat.opacity = obj.baseGlassOpacity * ratio;
       }
     }
     if (newConfig.gemColorOverride !== undefined) {
       for (const obj of nodeObjects) {
+        if (obj.style === 'metal') continue;
         const isUnlocked = obj.mesh.userData.isUnlocked;
         const canUnlock = obj.mesh.userData.canUnlock;
         const cls = currentClass || obj.skill.cls;
@@ -1122,14 +1706,21 @@ const SkillRenderer = (() => {
   // ---- COSMERE CENTER SYMBOL ----
   // radiantClass: if set, shows the order glyph tinted with its class color;
   //               otherwise shows the Cosmere symbol in gold.
-  function addCosmereCenterSymbol(radiantClass) {
-    const svgPath = (radiantClass && RADIANT_SVG_MAP[radiantClass])
-      ? RADIANT_SVG_MAP[radiantClass]
-      : 'svg/Cosmere_symbol.svg';
+  // Símbolo do mundo de cada cenário (svg/mundos): Roshar, Scadrial ou o Cosmere inteiro
+  const WORLD_SYMBOL = {
+    stormlight: { svg: 'svg/mundos/roshar.svg',   tint: 'rgba(212,168,83,1.0)' },
+    mistborn:   { svg: 'svg/mundos/scadrial.svg', tint: 'rgba(124,196,255,1.0)' },
+    misto:      { svg: 'svg/mundos/Cosmere.svg',  tint: 'rgba(214,204,245,1.0)' },
+  };
 
-    // Tint color: class color for orders, gold for the base Cosmere symbol
-    let tintColor = 'rgba(212,168,83,1.0)';
-    if (radiantClass) {
+  function addCosmereCenterSymbol(radiantClass) {
+    // A ordem radiante só assume o centro no cenário Cosmere; no Misto vale o Cosmere
+    const useOrder = radiantClass && RADIANT_SVG_MAP[radiantClass] && _theme === 'stormlight';
+    const world = WORLD_SYMBOL[_theme] || WORLD_SYMBOL.stormlight;
+    const svgPath = useOrder ? RADIANT_SVG_MAP[radiantClass] : world.svg;
+
+    let tintColor = world.tint;
+    if (useOrder) {
       const hex = COLOR_MAP[radiantClass];
       if (hex !== undefined) {
         const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
@@ -1141,7 +1732,7 @@ const SkillRenderer = (() => {
       const mat = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
-        opacity: radiantClass ? 0.5 : 0.3,
+        opacity: useOrder ? 0.5 : 0.42,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -1159,7 +1750,10 @@ const SkillRenderer = (() => {
       const canvas = document.createElement('canvas');
       canvas.width = size; canvas.height = size;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, size, size);
+      // Mantém a proporção (os símbolos de mundo não são quadrados)
+      const ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+      const w = ar >= 1 ? size : size * ar, h = ar >= 1 ? size / ar : size;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
       // Tint to target color using source-in composite
       ctx.globalCompositeOperation = 'source-in';
       ctx.fillStyle = tintColor;
@@ -1175,12 +1769,27 @@ const SkillRenderer = (() => {
   // ---- BUILD ALL CLASSES (panoramic view) ----
   let _viewMode = 'single'; // 'single' or 'all'
 
-  function buildAllTrees(unlockedSkills, periciaValues, canUnlockFn, radiantClass, additionalClasses) {
+  // Raios do centro até cada talento-chave na visão "Todas"
+  let _spokes = [];
+  function paintSpoke(spoke, unlockedSkills) {
+    const active = spoke.rootId !== null && unlockedSkills.has(spoke.rootId);
+    const color = treeColor(spoke.cls);
+    spoke.mat.color.setHex(active ? color : spoke.idleColor);
+    spoke.mat.opacity = active ? 0.85 : spoke.idleOpacity;
+    if (active && !spoke.active) {
+      if (nodeStyleFor(spoke.cls) === 'metal') createSparksAlongLine(spoke.from, spoke.to, color);
+      else createSmokeAlongLine(spoke.from, spoke.to, color);
+    }
+    spoke.active = active;
+  }
+
+  function buildAllTrees(unlockedSkills, periciaValues, canUnlockFn, radiantClass, additionalClasses, metalClasses) {
     _viewMode = 'all';
     _canUnlockFn = canUnlockFn || null;
     currentClass = null;
 
     clearTree();
+    _coinScale = 0.85;
 
     // --- Reset camera to flat (no tilt) for panoramic view ---
     mainGroup.rotation.set(0, 0, 0);
@@ -1191,12 +1800,13 @@ const SkillRenderer = (() => {
     const allPositions = {};
     const scale = 0.58;
 
-    // Helper: place one tree at world offset (cx, cy), radiating at outwardAngle
-    function placeTree(cls, skills, children, root, cx, cy, outwardAngle, isRadiant) {
-      // Max local radius: half the chord between adjacent roots (in local units before scale),
-      // with a safety margin so trees stay within their sector
-      const chordHalf = (Math.PI * radius / total) / scale * 0.8;
-      const localPos = computeLayout(cls, skills, children, root, outwardAngle, chordHalf);
+    // Helper: place one tree at world offset (cx, cy), radiating at outwardAngle.
+    // Árvores de moeda chegam com o layout pronto (tamanho natural); as de gema
+    // continuam limitadas ao setor como antes.
+    function placeTree(cls, skills, children, root, cx, cy, outwardAngle, isRadiant, preLayout, outerExtent, halfWidth) {
+      // Max local radius (árvores de gema): a meia-largura reservada para ela no anel
+      const chordHalf = (halfWidth || 3.95) / scale;
+      const localPos = preLayout || computeLayout(cls, skills, children, root, outwardAngle, chordHalf);
       for (const skill of skills) {
         if (!localPos[skill.id]) continue;
         const lp = localPos[skill.id];
@@ -1206,18 +1816,21 @@ const SkillRenderer = (() => {
         const canUnlock  = !isUnlocked && _canUnlockFn ? _canUnlockFn(skill) : false;
         createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues);
       }
-      const findFn = isRadiant ? CosData.findRadiantSkillByName : CosData.findSkillByName;
+      if (isRadiant === 'metal') addTreeGlyph(cls, skills.filter(s => s.rank > 0).map(s => allPositions[s.id]));
+      const findFn = isRadiant === 'metal' ? CosData.findMetalSkillByName
+                   : isRadiant === 'additional' ? CosData.findAdditionalSkillByName
+                   : isRadiant ? CosData.findRadiantSkillByName : CosData.findSkillByName;
       for (const skill of skills) {
         if (!allPositions[skill.id]) continue;
         for (const depName of skill.deps) {
-          const parent = findFn(depName, cls);
+          const parent = findFn(depName, cls, skill.sub);
           if (parent && allPositions[parent.id]) {
             createConnection(allPositions[parent.id], allPositions[skill.id], skill, parent, unlockedSkills, cls);
           }
         }
       }
       // Place label beyond the outermost nodes, in the outward direction from centre
-      const labelDist = 17.5;
+      const labelDist = outerExtent !== undefined ? radius + outerExtent + 1.6 : radius + 6.5;
       createClassLabel(cls, Math.cos(outwardAngle) * labelDist, Math.sin(outwardAngle) * labelDist);
     }
 
@@ -1228,32 +1841,102 @@ const SkillRenderer = (() => {
     if (additionalClasses && additionalClasses.length) {
       additionalClasses.forEach(cls => allEntries.push({ cls, isRadiant: false, isAdditional: true }));
     }
+    if (metalClasses && metalClasses.length) {
+      metalClasses.forEach(cls => allEntries.push({ cls, isRadiant: false, isMetal: true }));
+    }
 
     const total  = allEntries.length; // 6 without radiant, 7 with
-    const radius = 11;
 
-    // Compute root positions — evenly spaced full circle, starting from top
-    const rootPositions = allEntries.map((entry, idx) => {
-      const angle = Math.PI / 2 - (2 * Math.PI * idx / total);
-      return { ...entry, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, angle };
+    // Grafo, raiz e (para moedas) o layout em tamanho natural de cada árvore.
+    // O layout é medido apontando para cima (π/2) e girado depois para o ângulo final.
+    for (const entry of allEntries) {
+      const g = entry.isRadiant ? CosData.buildRadiantGraph(entry.cls)
+        : entry.isAdditional ? CosData.buildAdditionalGraph(entry.cls)
+        : entry.isMetal ? CosData.buildMetalGraph(entry.cls)
+        : CosData.buildGraph(entry.cls);
+      entry.skills = g.skills;
+      entry.children = g.children;
+      entry.root = entry.isRadiant ? CosData.getRootRadiantSkill(entry.cls)
+        : entry.isAdditional ? CosData.getRootAdditionalSkill(entry.cls)
+        : entry.isMetal ? CosData.getRootMetalSkill(entry.cls)
+        : CosData.getRootSkill(entry.cls);
+      entry.kind = entry.isRadiant ? true : entry.isAdditional ? 'additional' : entry.isMetal ? 'metal' : false;
+      // Árvores de gema continuam limitadas ao setor, com a mesma meia-largura de sempre
+      entry.halfWidth = 3.95;
+      if (entry.root && nodeStyleFor(entry.cls) === 'metal') {
+        entry.layout = computeLayout(entry.cls, entry.skills, entry.children, entry.root, Math.PI / 2);
+        // Alcance para fora (o = y) e meia-largura (q = |x|) de cada nó, já na escala do anel
+        let out = 0;
+        entry.pts = [];
+        for (const p of Object.values(entry.layout)) {
+          const o = p.y * scale, q = Math.abs(p.x) * scale;
+          entry.pts.push([o, q + 0.4]); // + meia moeda
+          out = Math.max(out, o);
+        }
+        entry.outer = out;
+      }
+    }
+
+    // Quanto do círculo (em radianos, de cada lado) a árvore ocupa com o anel no raio R.
+    // Os galhos se abrem para fora, onde há mais espaço, então medir no próprio nó
+    // (e não na raiz) evita um anel desnecessariamente grande.
+    const angularHalf = (entry, R) => entry.pts
+      ? Math.max(...entry.pts.map(([o, q]) => Math.atan2(q, R + o)))
+      : Math.atan2(entry.halfWidth, R);
+    const GAP = 1.1; // folga mínima entre árvores vizinhas (unidades de mundo)
+    const needed = R => allEntries.reduce((a, e) => a + 2 * angularHalf(e, R) + GAP / R, 0);
+    // Menor anel em que todas cabem com a folga mínima
+    let radius = 11;
+    while (needed(radius) > 2 * Math.PI && radius < 80) radius += 0.25;
+
+    // Cada árvore recebe a fatia do tamanho dela; a sobra do círculo é dividida
+    // igualmente, então o vão entre vizinhas é o mesmo em todo o anel
+    const slack = Math.max(0, 2 * Math.PI - needed(radius)) / total;
+    const widths = allEntries.map(e => 2 * angularHalf(e, radius) + GAP / radius + slack);
+    let cursor = Math.PI / 2;
+    allEntries.forEach((e, i) => {
+      if (i > 0) cursor -= widths[i - 1] / 2 + widths[i] / 2;
+      e.angle = cursor;
+      e.sectorHalf = widths[i] / 2;
+      // Gira o layout medido (para cima) até o ângulo da árvore
+      if (e.layout) {
+        const rot = e.angle - Math.PI / 2, c = Math.cos(rot), s = Math.sin(rot);
+        for (const p of Object.values(e.layout)) {
+          const x = p.x * c - p.y * s, y = p.x * s + p.y * c;
+          p.x = x; p.y = y;
+        }
+      }
     });
+
+    // Compute root positions — each tree centered in its own sector, starting from top
+    const rootPositions = allEntries.map(entry => ({
+      ...entry, x: Math.cos(entry.angle) * radius, y: Math.sin(entry.angle) * radius,
+    }));
 
     // --- Constellation skeleton (behind nodes) ---
     // Spokes: start at inner gap (avoid covering center symbol) → each root
+    // O raio acende (cor da árvore + faíscas) quando o talento-chave é comprado
     const spokeInnerR = 3.8;
+    _spokes = [];
     for (const rp of rootPositions) {
-      mainGroup.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(Math.cos(rp.angle) * spokeInnerR, Math.sin(rp.angle) * spokeInnerR, -0.1),
-          new THREE.Vector3(rp.x, rp.y, -0.1),
-        ]),
-        new THREE.LineBasicMaterial({
-          color: rp.isRadiant ? 0xc084fc : 0x2a3a55,
-          transparent: true,
-          opacity: rp.isRadiant ? 0.4 : 0.5,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        })
-      ));
+      const rootSkill = rp.isRadiant ? CosData.getRootRadiantSkill(rp.cls)
+        : rp.isAdditional ? CosData.getRootAdditionalSkill(rp.cls)
+        : rp.isMetal ? CosData.getRootMetalSkill(rp.cls)
+        : CosData.getRootSkill(rp.cls);
+      const idleColor = rp.isRadiant ? 0xc084fc : 0x2a3a55;
+      const idleOpacity = rp.isRadiant ? 0.4 : 0.5;
+      const mat = new THREE.LineBasicMaterial({
+        color: idleColor, transparent: true, opacity: idleOpacity,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const from = { x: Math.cos(rp.angle) * spokeInnerR, y: Math.sin(rp.angle) * spokeInnerR, z: -0.1 };
+      const to   = { x: rp.x, y: rp.y, z: -0.1 };
+      mainGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(from.x, from.y, from.z), new THREE.Vector3(to.x, to.y, to.z),
+      ]), mat));
+      const spoke = { mat, rootId: rootSkill ? rootSkill.id : null, cls: rp.cls, idleColor, idleOpacity, from, to, active: false };
+      _spokes.push(spoke);
+      paintSpoke(spoke, unlockedSkills);
     }
 
     // Ring: adjacent root connections
@@ -1289,19 +1972,7 @@ const SkillRenderer = (() => {
 
     // Place each tree at its ring position, radiating outward
     for (const rp of rootPositions) {
-      if (rp.isRadiant) {
-        const { skills, children } = CosData.buildRadiantGraph(rp.cls);
-        const root = CosData.getRootRadiantSkill(rp.cls);
-        if (root) placeTree(rp.cls, skills, children, root, rp.x, rp.y, rp.angle, true);
-      } else if (rp.isAdditional) {
-        const { skills, children } = CosData.buildAdditionalGraph(rp.cls);
-        const root = CosData.getRootAdditionalSkill(rp.cls);
-        if (root) placeTree(rp.cls, skills, children, root, rp.x, rp.y, rp.angle, false);
-      } else {
-        const { skills, children } = CosData.buildGraph(rp.cls);
-        const root = CosData.getRootSkill(rp.cls);
-        if (root) placeTree(rp.cls, skills, children, root, rp.x, rp.y, rp.angle, false);
-      }
+      if (rp.root) placeTree(rp.cls, rp.skills, rp.children, rp.root, rp.x, rp.y, rp.angle, rp.kind, rp.layout, rp.outer, rp.halfWidth);
     }
 
     // Fit camera so all nodes are visible, accounting for actual content extent
@@ -1316,7 +1987,7 @@ const SkillRenderer = (() => {
       const halfFovRad = (camera.fov / 2) * Math.PI / 180;
       const zForHeight = (maxExtentY + 2.5) / Math.tan(halfFovRad);
       const zForWidth  = (maxExtentX + 2.5) / (Math.tan(halfFovRad) * camera.aspect);
-      camera.position.z = Math.min(60, Math.max(20, Math.max(zForHeight, zForWidth)));
+      camera.position.z = Math.min(90, Math.max(20, Math.max(zForHeight, zForWidth)));
     }
   }
 
@@ -1336,7 +2007,7 @@ const SkillRenderer = (() => {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const hex = COLOR_MAP[cls] !== undefined ? COLOR_MAP[cls] : 0xc084fc;
+    const hex = treeColor(cls);
     const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
     
     // Aumentei a opacidade para 0.85 para ficar mais nítido fora dos nodes
@@ -1417,7 +2088,7 @@ const SkillRenderer = (() => {
     ctx.textBaseline = 'middle';
 
     // Class color — fallback to radiant purple for unmapped classes
-    const hex = COLOR_MAP[cls] !== undefined ? COLOR_MAP[cls] : 0xc084fc;
+    const hex = treeColor(cls);
     const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
     ctx.fillStyle = `rgba(${r},${g},${b},0.92)`;
     ctx.fillText(cls, canvasW / 2, canvasH / 2);
@@ -1434,6 +2105,299 @@ const SkillRenderer = (() => {
     // Width scales with canvas so long names stay legible
     sprite.scale.set(canvasW / canvasH, 1, 1);
     mainGroup.add(sprite);
+  }
+
+  // ---- TABELA METÁLICA (aba Metalnascida) ----
+  // O caminho fica no centro como um cubo; cada Arte Metálica escolhida ocupa uma
+  // posição num anel gravado, agrupada por categoria como na tabela alomântica,
+  // e sua árvore se abre em leque para fora.
+
+  // Layout radial "arrumado": cada nó recebe uma fatia angular proporcional às
+  // folhas da sua subárvore; raio = R0 + profundidade × passo.
+  // rootPos (opcional) fixa a raiz fora do leque — usado pelos metais do anel interno,
+  // cuja árvore começa só depois do anel externo.
+  function layoutRadialTree(skills, root, findDep, angle, span, R0, step, positions, rootPos) {
+    const kids = {};
+    const parentOf = {};
+    for (const s of skills) kids[s.id] = [];
+    // Árvore geradora: primeiro pai resolvido (na ordem dos deps) vira o "pai" do layout
+    const byDepth = [...skills].sort((a, b) => a.rank - b.rank);
+    for (const s of byDepth) {
+      if (s === root) continue;
+      let parent = null;
+      for (const d of s.deps) {
+        const p = findDep(d);
+        if (p && kids[p.id] && p !== s && p.rank < s.rank) { parent = p; break; }
+      }
+      if (!parent) parent = root;
+      parentOf[s.id] = parent.id;
+      kids[parent.id].push(s);
+    }
+    const leaves = {};
+    const countLeaves = (s, seen = new Set()) => {
+      if (seen.has(s.id)) return 1;
+      seen.add(s.id);
+      const k = kids[s.id];
+      leaves[s.id] = k.length ? k.reduce((acc, c) => acc + countLeaves(c, seen), 0) : 1;
+      return leaves[s.id];
+    };
+    countLeaves(root);
+    const place = (s, a0, a1, depth) => {
+      const a = (a0 + a1) / 2;
+      const r = R0 + depth * step;
+      positions[s.id] = { x: Math.cos(a) * r, y: Math.sin(a) * r, z: 0 };
+      const k = kids[s.id];
+      const total = k.reduce((acc, c) => acc + (leaves[c.id] || 1), 0) || 1;
+      let cur = a0;
+      for (const c of k) {
+        const w = (a1 - a0) * (leaves[c.id] || 1) / total;
+        place(c, cur, cur + w, depth + 1);
+        cur += w;
+      }
+    };
+    place(root, angle - span / 2, angle + span / 2, 0);
+    if (rootPos) positions[root.id] = { ...rootPos };
+    return positions;
+  }
+
+  function createTextSprite(text, x, y, opts = {}) {
+    const fontSize = opts.size || 22;
+    const weight = opts.bold ? 'bold ' : '';
+    const tmp = document.createElement('canvas').getContext('2d');
+    tmp.font = `${weight}${fontSize}px Cinzel, serif`;
+    const w = Math.max(64, Math.ceil(tmp.measureText(text).width) + 20);
+    const h = Math.ceil(fontSize * 1.8);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${weight}${fontSize}px Cinzel, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = opts.color || 'rgba(220,225,235,0.9)';
+    ctx.fillText(text, w / 2, h / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+    const worldH = opts.height || 0.7;
+    sprite.scale.set(worldH * w / h, worldH, 1);
+    sprite.position.set(x, y, 0.2);
+    mainGroup.add(sprite);
+    return sprite;
+  }
+
+  function hexToRgba(hex, a) {
+    return `rgba(${(hex >> 16) & 255},${(hex >> 8) & 255},${hex & 255},${a})`;
+  }
+
+  function addRing(radius, color, opacity, segments = 128, a0 = 0, a1 = Math.PI * 2) {
+    const pts = [];
+    for (let i = 0; i <= segments; i++) {
+      const a = a0 + (a1 - a0) * i / segments;
+      pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, -0.15));
+    }
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }));
+    mainGroup.add(line);
+    return line;
+  }
+
+  // Posições da Tabela dos Metais Alomânticos (graus; 0° = direita, 90° = topo).
+  // Metais externos no anel de fora, internos no de dentro; os de "puxar" ficam do
+  // lado do eixo vertical e os de "empurrar" do lado horizontal, como no livro.
+  // `root` = onde fica a moeda do poder; `sector` = centro da fatia do ramo dele.
+  // Quadrantes: Físico (sup. esq.), Mental (sup. dir.), Aprimoramento (inf. esq.),
+  // Temporal (inf. dir.). A Feruquemia usa as mesmas posições por metal.
+  const TABLE_SLOTS = {
+    ferro:       { root: 117, sector: 106.5, ring: 'out' },
+    estanho:     { root: 117, sector: 125.5, ring: 'in'  },
+    peltre:      { root: 160, sector: 144.5, ring: 'in'  },
+    aco:         { root: 160, sector: 163.5, ring: 'out' },
+    zinco:       { root: 66,  sector: 73.5,  ring: 'out' },
+    cobre:       { root: 66,  sector: 54.5,  ring: 'in'  },
+    bronze:      { root: 20,  sector: 35.5,  ring: 'in'  },
+    latao:       { root: 20,  sector: 16.5,  ring: 'out' },
+    nicrosil:    { root: 200, sector: 196.5, ring: 'out' },
+    duraluminio: { root: 200, sector: 215.5, ring: 'in'  },
+    aluminio:    { root: 246, sector: 234.5, ring: 'in'  },
+    cromo:       { root: 246, sector: 253.5, ring: 'out' },
+    cadmio:      { root: 294, sector: 286.5, ring: 'out' },
+    ouro:        { root: 294, sector: 305.5, ring: 'in'  },
+    electro:     { root: 340, sector: 324.5, ring: 'in'  },
+    bendaliga:   { root: 340, sector: 343.5, ring: 'out' },
+    atium:       { root: 90,  sector: 90,    ring: 'out', span: 13 }, // metal divino, fora dos quadrantes
+  };
+  const SLOT_SPAN = 19; // graus de cada fatia de ramo
+  const QUADRANTS = [ // centro do quadrante e metais internos (para o arco interno)
+    { center: 135, inner: ['estanho', 'peltre'],        name: { allo: 'Físico',        feru: 'Físico' } },
+    { center: 45,  inner: ['cobre', 'bronze'],          name: { allo: 'Mental',        feru: 'Cognitivo' } },
+    { center: 225, inner: ['duraluminio', 'aluminio'],  name: { allo: 'Aprimoramento', feru: 'Espiritual' } },
+    { center: 315, inner: ['ouro', 'electro'],          name: { allo: 'Temporal',      feru: 'Híbrido' } },
+  ];
+  const deg = d => d * Math.PI / 180;
+
+  function buildMetalbornTree(pathCls, artTrees, unlockedSkills, keepView, canUnlockFn) {
+    _viewMode = 'metal'; // zoom mais aberto, como na visão "Todas"
+    currentClass = pathCls;
+    _canUnlockFn = canUnlockFn || null;
+    const savedPos  = keepView && mainGroup ? { x: mainGroup.position.x, y: mainGroup.position.y } : null;
+    const savedZoom = keepView && camera ? camera.position.z : null;
+    clearTree();
+
+    // Vista frontal, sem inclinação: é uma tabela gravada
+    mainGroup.rotation.set(0, 0, 0);
+
+    const positions = {};
+    const nodeState = s => {
+      const u = unlockedSkills.has(s.id);
+      return { u, c: !u && _canUnlockFn ? _canUnlockFn(s) : false };
+    };
+
+    const { skills: pSkills } = CosData.buildMetalGraph(pathCls);
+    const key = CosData.getRootMetalSkill(pathCls);
+    if (!key) return;
+    const pathInfo = CosData.METALBORN_PATHS[pathCls] || {};
+    // Nascido da Bruma / Feruquemista veem a tabela inteira; Brumoso, Ferroso e
+    // Duplonato veem só os ramos a que têm acesso, num layout compacto.
+    const tableMode = pathInfo.allo === 'all' || pathInfo.feru === 'all';
+    const tableArt  = pathInfo.feru === 'all' ? 'feru' : 'allo';
+
+    const trees = artTrees.map(cls => ({ cls, metal: CosData.getMetalOfTree(cls), art: CosData.getArtOfTree(cls) }))
+      .filter(t => t.metal && t.art)
+      .sort((a, b) => (a.art === b.art ? 0 : a.art === 'allo' ? -1 : 1));
+
+    const hubStep = 1.55;
+    const step = 1.75;
+    const hubDepth = Math.max(1, ...pSkills.map(s => s.rank));
+    const hubR = hubDepth * hubStep + 0.9;
+    const pathColor = treeColor(pathCls);
+    const artPositions = [];
+    const labelPoints = [];
+
+    if (tableMode) {
+      // 1. Cubo central: árvore do caminho em leque de 360°
+      layoutRadialTree(pSkills, key, d => CosData.findMetalSkillByName(d, pathCls), Math.PI / 2, Math.PI * 2, 0, hubStep, positions);
+      const Rin  = hubR + 1.5;
+      const Rout = Rin + 2.3;
+
+      // 2. Gravação da tabela: anel externo, arcos internos por quadrante, eixos
+      addRing(hubR, pathColor, 0.35);
+      addRing(Rout, 0x8e9aaa, 0.55);
+      addRing(Rout + 0.35, 0x8e9aaa, 0.18);
+      for (const [a0, a1] of [[0, 0], [90, 90], [180, 180], [270, 270]]) {
+        const len = a0 === 90 ? Rout - 0.4 : Rout + 0.6; // no topo o eixo para no Atium
+        mainGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(Math.cos(deg(a0)) * hubR, Math.sin(deg(a0)) * hubR, -0.15),
+          new THREE.Vector3(Math.cos(deg(a1)) * len, Math.sin(deg(a1)) * len, -0.15),
+        ]), new THREE.LineBasicMaterial({ color: 0x8e9aaa, transparent: true, opacity: 0.35, depthWrite: false })));
+      }
+      const lineCol = tableArt === 'feru' ? FERU_LINE : ALLO_LINE;
+      for (const q of QUADRANTS) {
+        const [i0, i1] = q.inner.map(k => TABLE_SLOTS[k].sector);
+        addRing(Rin, lineCol, 0.45, 32, deg(Math.min(i0, i1)), deg(Math.max(i0, i1)));
+        const lr = Rin + 1.15;
+        createTextSprite(q.name[tableArt].toUpperCase(), Math.cos(deg(q.center)) * lr, Math.sin(deg(q.center)) * lr,
+          { size: 22, bold: true, height: 0.55, color: hexToRgba(lineCol, 0.85) });
+      }
+
+      // 3. Árvores das Artes nas posições da tabela
+      for (const t of trees) {
+        const slot = TABLE_SLOTS[t.metal.key];
+        if (!slot) continue;
+        const { skills } = CosData.buildMetalGraph(t.cls);
+        const root = CosData.getRootMetalSkill(t.cls);
+        if (!root) continue;
+        const rootR = slot.ring === 'in' ? Rin : Rout;
+        // Moeda alinhada com o próprio ramo: linhas de metais vizinhos não se cruzam
+        const rootPos = { x: Math.cos(deg(slot.sector)) * rootR, y: Math.sin(deg(slot.sector)) * rootR, z: 0 };
+        const depth = Math.max(0, ...skills.map(s => s.rank));
+        layoutRadialTree(skills, root, d => CosData.findMetalSkillByName(d, t.cls),
+          deg(slot.sector), deg((slot.span || SLOT_SPAN) * 0.82), Rout, step, positions, rootPos);
+        artPositions.push({ t, skills, root, spokeAngle: deg(slot.sector), labelAngle: deg(slot.sector), outer: Rout + depth * step });
+      }
+    } else {
+      // Compacto: caminho em leque para baixo, ramos dos poderes para cima
+      layoutRadialTree(pSkills, key, d => CosData.findMetalSkillByName(d, pathCls), -Math.PI / 2, deg(220), 0, hubStep * 1.3, positions);
+      const N = trees.length;
+      const angles = N === 1 ? [90] : [135, 45];
+      const span = N === 1 ? 130 : 80;
+      const R = 2.4;
+      trees.forEach((t, i) => {
+        const { skills } = CosData.buildMetalGraph(t.cls);
+        const root = CosData.getRootMetalSkill(t.cls);
+        if (!root) return;
+        const depth = Math.max(0, ...skills.map(s => s.rank));
+        layoutRadialTree(skills, root, d => CosData.findMetalSkillByName(d, t.cls), deg(angles[i]), deg(span), R, step, positions);
+        artPositions.push({ t, skills, root, spokeAngle: deg(angles[i]), labelAngle: deg(angles[i]), outer: R + depth * step, fromKey: true });
+      });
+    }
+
+    // 5. Nós
+    for (const s of pSkills) {
+      const st = nodeState(s);
+      createNode(s, positions[s.id], st.u, st.c, pathCls);
+    }
+    for (const { t, skills } of artPositions) {
+      addTreeGlyph(t.cls, skills.filter(s => s.rank > 0).map(s => positions[s.id]));
+      for (const s of skills) {
+        if (!positions[s.id]) continue;
+        const st = nodeState(s);
+        createNode(s, positions[s.id], st.u, st.c, t.cls);
+      }
+    }
+
+    // 6. Conexões: árvore do caminho, cubo → poderes e dentro de cada Arte
+    for (const s of pSkills) {
+      for (const d of s.deps) {
+        const p = CosData.findMetalSkillByName(d, pathCls);
+        if (p && positions[p.id]) createConnection(positions[p.id], positions[s.id], s, p, unlockedSkills, pathCls);
+      }
+    }
+    for (const { t, skills, root, spokeAngle, labelAngle, outer, fromKey } of artPositions) {
+      // Raio do cubo até o poder: o Alomântico "puxando" o metal
+      const from = fromKey ? positions[key.id] : { x: Math.cos(spokeAngle) * hubR, y: Math.sin(spokeAngle) * hubR, z: 0 };
+      createConnection(from, positions[root.id], root, key, unlockedSkills, t.cls);
+      for (const s of skills) {
+        for (const d of s.deps) {
+          const p = CosData.findMetalSkillByName(d, t.cls);
+          if (p && positions[p.id] && positions[s.id]) createConnection(positions[p.id], positions[s.id], s, p, unlockedSkills, t.cls);
+        }
+      }
+      // Rótulos: nome do metal + nome do Brumoso/Ferroso
+      const info = t.metal[t.art];
+      const who = t.art === 'allo' ? info.misting : info.ferring;
+      const ld = outer + 1.5;
+      const lx = Math.cos(labelAngle) * ld, ly = Math.sin(labelAngle) * ld;
+      const mcol = treeColor(t.cls);
+      createTextSprite(t.metal.name, lx, ly + 0.3, { size: 30, bold: true, height: 0.95, color: hexToRgba(mcol, 1) });
+      // Na tabela inteira a Arte é a mesma para todos, então só o nome do Brumoso/Ferroso
+      createTextSprite(tableMode ? who : `${t.art === 'allo' ? 'Alomancia' : 'Feruquemia'} · ${who}`,
+        lx, ly - 0.45, { size: 20, height: tableMode ? 0.42 : 0.5, color: 'rgba(200,208,220,0.8)' });
+      labelPoints.push({ x: lx, y: ly });
+    }
+
+    // Rótulo do caminho: abaixo do cubo (tabela) ou abaixo do leque do caminho (compacto)
+    let pathLabelY = -hubR - 0.7;
+    if (!tableMode) pathLabelY = Math.min(...pSkills.map(s => positions[s.id].y)) - 1.1;
+    createTextSprite(pathCls, 0, pathLabelY, { size: 30, bold: true, height: 0.85, color: hexToRgba(pathColor, 1) });
+    labelPoints.push({ x: 0, y: pathLabelY });
+
+    if (savedPos) {
+      mainGroup.position.x = savedPos.x;
+      mainGroup.position.y = savedPos.y;
+      camera.position.z = savedZoom;
+      camera.position.x = 0; camera.position.y = 0;
+      camera.rotation.set(0, 0, 0);
+    } else {
+      // Enquadra nós + rótulos (o layout compacto não é centrado na origem)
+      const pts = [...Object.values(positions), ...labelPoints];
+      const minX = Math.min(...pts.map(p => p.x)) - 2.2, maxX = Math.max(...pts.map(p => p.x)) + 2.2;
+      const minY = Math.min(...pts.map(p => p.y)) - 1.2, maxY = Math.max(...pts.map(p => p.y)) + 1.2;
+      mainGroup.position.set(-(minX + maxX) / 2, -(minY + maxY) / 2, 0);
+      camera.rotation.set(0, 0, 0);
+      const halfFov = (camera.fov / 2) * Math.PI / 180;
+      const zFit = Math.max(((maxY - minY) / 2) / Math.tan(halfFov), ((maxX - minX) / 2) / (Math.tan(halfFov) * camera.aspect));
+      camera.position.set(0, 0, Math.min(95, Math.max(10, zFit)));
+    }
   }
 
   function getViewMode() { return _viewMode; }
@@ -1818,6 +2782,6 @@ const SkillRenderer = (() => {
 
     requestAnimationFrame(animateStep);
   }
-  return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass, setConfig, getConfig };
+  return { init, buildTree: buildSingleTree, buildAllTrees, buildMetalbornTree, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass, setConfig, getConfig, setTheme, getTheme };
 
 })();

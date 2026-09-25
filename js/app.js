@@ -98,13 +98,44 @@ const App = (() => {
     await Promise.all([...new Set(allSvgs)].map(fetchSvgText));
   }
 
+  // Perícia inicial da trilha de partida (heroica ou Metalnascida).
+  // Chaves de PERICIAS_METALICAS vivem em state.metalPericias.
   const CLASS_INITIAL_PERICIA = {
     'Agente':    'intuicao',
     'Caçador':   'percepcao',
     'Emissário': 'disciplina',
     'Erudito':   'saber',
     'Guerreiro': 'atletismo',
-    'Líder':     'lideranca'
+    'Líder':     'lideranca',
+    'Brumoso':   'alomancia',
+    'Ferroso':   'feruquimia',
+    'Duplonato': 'disciplina',
+  };
+
+  // Ancestralidades — o cenário define quais aparecem na criação
+  const RACES = {
+    human:  { name: 'Humano',       setting: 'both' },
+    singer: { name: 'Cantor',       setting: 'stormlight', tree: 'Cantor' },
+    kandra: { name: 'Kandra',       setting: 'mistborn',   tree: 'Kandra' },
+    koloss: { name: 'Sangue-Koloss', setting: 'mistborn',  tree: 'Sangue-Koloss', era: 'e2' },
+  };
+
+  // Arte de cada ancestralidade (miniaturas leves em assets/thumbs; originais em assets/).
+  // O humano muda de cenário: Roshar no Cosmere/Misto, Scadrial no Mistborn.
+  function raceArt(race) {
+    const file = race === 'human'
+      ? (CosData.getSetting() === 'mistborn' ? 'human_mistborn' : 'human')
+      : { singer: 'singer', kandra: 'kandra', koloss: 'kollos_blood' }[race];
+    return file ? `assets/thumbs/${file}.jpg` : null;
+  }
+
+  // Bênçãos Kandra (par de cravos Hemalúrgicos escolhido na criação)
+  const KANDRA_BLESSINGS = {
+    consciencia: { name: 'Bênção da Consciência',  desc: '+2 Consciência (e +2 no máximo)', bonus: { consciencia: 2 } },
+    potencia:    { name: 'Bênção da Potência',     desc: '+1 Força e +1 Velocidade',        bonus: { forca: 1, velocidade: 1 } },
+    presenca:    { name: 'Bênção da Presença',     desc: '+1 Intelecto e +1 Presença',      bonus: { intelecto: 1, presenca: 1 } },
+    estabilidade:{ name: 'Bênção da Estabilidade', desc: '+2 Vontade (e +2 no máximo)',     bonus: { vontade: 2 } },
+    fortitude:   { name: 'Bênção da Fortitude',    desc: '+1 de Deflexão',                  bonus: {} },
   };
 
   const state = {
@@ -112,9 +143,13 @@ const App = (() => {
       name: '',
       race: 'human',
       level: 1,
+      setting: 'stormlight',  // 'stormlight' (Cosmere) | 'mistborn' | 'misto'
+      era: 'livre',           // Mistborn: 1 | 2 | 'livre'
+      kandraBlessing: null,
+      metalborn: null,        // { path, allo: [metalKey], feru: [metalKey] }
       radiantClass: null,
       radiantClassLocked: false,
-      ancestryClass: null,  // classe onde o humano gastou o 1º bônus ancestral
+      ancestryClass: null,  // trilha de partida (1º talento-chave comprado)
       pulverizadorCanone: null, // true = segue o Cânone, false = não segue, null = não perguntado
       rompeCeuCanone: null,     // true = segue o Cânone, false = não segue, null = não perguntado
     },
@@ -124,9 +159,11 @@ const App = (() => {
     },
     pericias: {},
     radiantPericias: {},
+    metalPericias: {},
     unlockedSkills: new Set(),
     freeUnlockedSkills: new Set(), // IDs auto-desbloqueados por habilidades compartilhadas
     singerFreeIds: new Set(),       // IDs concedidos gratuitamente pela ancestralidade Cantor
+    grantedIds: new Set(),          // Mistborn: talentos de ancestralidade e poderes treinados (sem custo)
     spentTalents: 0,
     activeClass: '_all',
   };
@@ -139,7 +176,45 @@ const App = (() => {
     for (const key of Object.keys(CosData.PERICIAS_RADIANTES)) {
       state.radiantPericias[key] = 0;
     }
+    for (const key of Object.keys(CosData.PERICIAS_METALICAS)) {
+      state.metalPericias[key] = 0;
+    }
   }
+
+  // ---- ATRIBUTOS EFETIVOS (base + bênçãos/talentos) ----
+  function getAttrBonus() {
+    const bonus = {};
+    const b = state.profile.race === 'kandra' && KANDRA_BLESSINGS[state.profile.kandraBlessing];
+    if (b) for (const [k, v] of Object.entries(b.bonus)) bonus[k] = (bonus[k] || 0) + v;
+    if (hasUnlockedByEn('Unchecked Size')) bonus.forca = (bonus.forca || 0) + 1;
+    return bonus;
+  }
+
+  function effectiveAttributes() {
+    const bonus = getAttrBonus();
+    const out = {};
+    for (const [k, v] of Object.entries(state.attributes)) out[k] = v + (bonus[k] || 0);
+    return out;
+  }
+
+  // Máximo do valor BASE do atributo (bônus de bênção/talento somam por fora)
+  function getAttrBaseMax(attr) {
+    const lvl1 = state.profile.level === 1;
+    let max = lvl1 ? 3 : 5;
+    if (attr === 'forca' && state.profile.race === 'koloss') max += 1; // Atributos Koloss
+    return max;
+  }
+
+  function hasUnlockedByEn(enName) {
+    for (const pool of [CosData.ADDITIONAL_SKILLS, CosData.METAL_SKILLS]) {
+      for (const s of pool || []) {
+        if (s.en === enName && state.unlockedSkills.has(s.id)) return true;
+      }
+    }
+    return false;
+  }
+
+  function isMistbornActive() { return CosData.hasMistborn(); }
 
   // ---- DERIVED VALUES ----
   function getPointsAvailable() {
@@ -153,12 +228,30 @@ const App = (() => {
   }
 
   function getAttrPointsRemaining() {
-    return getPointsAvailable().totalAttr - getAttrPointsSpent();
+    // Kandra distribui só 6 pontos na criação (a Bênção compensa)
+    const kandraPenalty = state.profile.race === 'kandra' ? 6 : 0;
+    return getPointsAvailable().totalAttr - kandraPenalty - getAttrPointsSpent();
+  }
+
+  // Ranks gratuitos de Alomancia/Feruquemia concedidos pelos talentos-chave Metalnascidos
+  function getMetalFreeRanks() {
+    const free = {};
+    const mb = state.profile.metalborn;
+    const path = mb && CosData.METALBORN_PATHS[mb.path];
+    if (path) {
+      const key = CosData.getRootMetalSkill(mb.path);
+      if (key && state.unlockedSkills.has(key.id)) {
+        for (const [k, v] of Object.entries(path.grantsRanks || {})) free[k] = (free[k] || 0) + v;
+      }
+    }
+    return free;
   }
 
   function getPericiaPointsSpent() {
     let sum = 0;
     for (const v of Object.values(state.pericias)) sum += v;
+    const metalFree = getMetalFreeRanks();
+    for (const [k, v] of Object.entries(state.metalPericias)) sum += Math.max(0, v - (metalFree[k] || 0));
     // Include the 2 active radiant surges if an order is chosen
     if (state.profile.radiantClass) {
       const keys = CosData.RADIANT_CLASS_PERICIAS[state.profile.radiantClass] || [];
@@ -192,7 +285,7 @@ const App = (() => {
   }
 
   function getDefenses() {
-    const a = state.attributes;
+    const a = effectiveAttributes();
     return {
       physical:  10 + a.forca + a.velocidade,
       cognitive: 10 + a.intelecto + a.vontade,
@@ -200,9 +293,19 @@ const App = (() => {
     };
   }
 
+  // Investidura: Radiantes ou Alomânticos (Brumoso, Nascido da Bruma, Duplonato) com o talento-chave
+  function hasInvestiture() {
+    if (state.profile.radiantClass) return true;
+    const mb = state.profile.metalborn;
+    const path = mb && CosData.METALBORN_PATHS[mb.path];
+    if (!path || !path.investiture) return false;
+    const key = CosData.getRootMetalSkill(mb.path);
+    return !!(key && state.unlockedSkills.has(key.id));
+  }
+
   // ---- ESTATÍSTICAS DERIVADAS ----
   function getDerivedStats() {
-    const a = state.attributes;
+    const a = effectiveAttributes();
     const p = state.profile;
 
     const ATTR_TABLE = {
@@ -234,14 +337,18 @@ const App = (() => {
     if (p.radiantClass === 'Rompe-Céu' && p.rompeCeuCanone === true) {
       maxHealth += p.level;
     }
+    // Vigor Koloss: +1 de vida por nível
+    if (hasUnlockedByEn('Koloss Stamina')) maxHealth += p.level;
 
     const maxFocus = 2 + a.vontade;
 
-    const maxInvestiture = p.radiantClass
+    const tier = CosData.LEVEL_TABLE.find(r => r.level === p.level)?.tier || 1;
+
+    let maxInvestiture = hasInvestiture()
       ? 2 + (a.consciencia >= a.presenca ? a.consciencia : a.presenca)
       : 0;
-
-    const tier = CosData.LEVEL_TABLE.find(r => r.level === p.level)?.tier || 1;
+    // Talento "Investido" (Brumoso/Nascido da Bruma/Duplonato): +Patamar
+    if (maxInvestiture > 0 && hasUnlockedByEn('Invested')) maxInvestiture += tier;
     let focoMaxCanone = null;
     if (p.radiantClass === 'Pulverizador' && p.pulverizadorCanone === true) {
       focoMaxCanone = Math.ceil(tier / 2);
@@ -295,6 +402,85 @@ const App = (() => {
     return false;
   }
 
+  // ---- REQUISITOS DE PERÍCIA / ATRIBUTO / NÍVEL ----
+  // Valor atual de um requisito descrito por CosData.describeStat
+  function statCurrentValue(desc) {
+    if (!desc) return 0;
+    if (desc.kind === 'level')   return state.profile.level;
+    if (desc.kind === 'pericia') return state.pericias[desc.key] || 0;
+    if (desc.kind === 'metal')   return state.metalPericias[desc.key] || 0;
+    if (desc.kind === 'attr')    return state.attributes[desc.key] || 0; // requisitos ignoram bônus temporários
+    return 0;
+  }
+
+  // Grupos de requisitos: todos os grupos (E) com ao menos uma alternativa (OU).
+  // Skills antigas usam reqStat/reqVal; as do Mistborn usam `reqs`.
+  function getReqGroups(skill) {
+    if (Array.isArray(skill.reqs) && skill.reqs.length) return skill.reqs;
+    if (skill.reqStat && !Array.isArray(skill.reqStat) && skill.reqVal > 0) {
+      return [[{ stat: skill.reqStat, val: skill.reqVal }]];
+    }
+    return [];
+  }
+
+  function statReqLines(skill) {
+    const lines = [];
+    for (const group of getReqGroups(skill)) {
+      const parts = group.map(r => {
+        const d = CosData.describeStat(r.stat);
+        const cur = statCurrentValue(d);
+        return { met: cur >= r.val, text: d && d.kind === 'level' ? `Nível ${r.val}` : `${d ? d.name : r.stat} +${r.val}`, cur };
+      });
+      const met = parts.some(p => p.met);
+      const text = parts.map(p => p.text).join(' ou ') + (parts.length === 1 ? ` (atual: ${parts[0].cur})` : '');
+      lines.push({ met, text });
+    }
+    return lines;
+  }
+
+  function checkStatReqs(skill) {
+    const failed = statReqLines(skill).find(l => !l.met);
+    return failed ? { can: false, reason: `Requer ${failed.text}` } : { can: true, reason: '' };
+  }
+
+  // ---- TRILHA DE PARTIDA E BÔNUS DE ANCESTRALIDADE (nível 1) ----
+  function isHeroicKey(skill) {
+    return skill.rank === 0 && CosData.CLASSES.includes(skill.cls) && !CosData.isMetalSkill(skill);
+  }
+  function isMetalbornKey(skill) {
+    return CosData.isMetalSkill(skill) && skill.rank === 0 && CosData.isMetalbornPathClass(skill.cls);
+  }
+  function isHeroicSkill(skill) {
+    return CosData.CLASSES.includes(skill.cls) && !CosData.isMetalSkill(skill);
+  }
+
+  // Regras dos primeiros talentos. No Mistborn a trilha de partida pode ser heroica
+  // ou Metalnascida, e o bônus humano precisa ser de uma trilha heroica.
+  function startingTalentGate(skill) {
+    const race = state.profile.race;
+    const mistRules = isMistbornActive() && race !== 'singer';
+    if (state.spentTalents === 0 && race !== 'singer') {
+      const ok = isHeroicKey(skill) || (mistRules && isMetalbornKey(skill));
+      if (!ok) {
+        return { can: false, reason: mistRules
+          ? 'Trilha de partida: escolha o talento-chave de uma trilha heroica ou Metalnascida'
+          : 'Ancestral Humano: escolha um Rank 0 de classe mundana' };
+      }
+    } else if (race === 'human' && state.spentTalents === 1) {
+      if (mistRules) {
+        if (!isHeroicSkill(skill)) return { can: false, reason: 'Bônus Humano: escolha um talento de trilha heroica' };
+      } else if (state.profile.ancestryClass && skill.cls !== state.profile.ancestryClass) {
+        return { can: false, reason: `Ancestral Humano: deve ser da classe ${state.profile.ancestryClass}` };
+      }
+    }
+    return { can: true, reason: '' };
+  }
+
+  function eraBlockReason(eraTag) {
+    if (!isMistbornActive() || CosData.eraAllows(eraTag, state.profile.era)) return null;
+    return `Indisponível na Era ${state.profile.era} (${CosData.ERA_LABEL[eraTag] || eraTag})`;
+  }
+
   function canUnlockAdditionalSkill(skill) {
     if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Já desbloqueado' };
 
@@ -304,12 +490,27 @@ const App = (() => {
     if (skill.cls === 'Cantor' && state.profile.race !== 'singer') {
       return { can: false, reason: 'Requer ancestralidade Cantor' };
     }
+    if (skill.cls === 'Kandra' && state.profile.race !== 'kandra') {
+      return { can: false, reason: 'Requer ancestralidade Kandra' };
+    }
+    if (skill.cls === 'Sangue-Koloss' && state.profile.race !== 'koloss') {
+      return { can: false, reason: 'Requer ancestralidade Sangue-Koloss' };
+    }
+    if (skill.grantedByAncestry) {
+      return { can: false, reason: 'Concedido automaticamente pela ancestralidade' };
+    }
     // Singer: após comprar nova forma, deve comprar talento de classe antes de mais formas
     if (skill.cls === 'Cantor' && state.profile.race === 'singer' && _singerHasNovaForma() && !state.profile.ancestryClass) {
       return { can: false, reason: 'Cantor: compre um talento de classe mundana primeiro' };
     }
 
     if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+
+    // Kandra / Sangue-Koloss: o 1º talento comprado ainda é o da trilha de partida
+    if (skill.cls !== 'Cantor') {
+      const gate = startingTalentGate(skill);
+      if (!gate.can) return gate;
+    }
 
     if (skill.rank === 0) return { can: true, reason: '' };
 
@@ -326,17 +527,7 @@ const App = (() => {
       return { can: false, reason: `Requer: ${root.name}` };
     }
 
-    if (skill.reqStat && skill.reqVal > 0) {
-      const periciaKey = CosData.statToPericia(skill.reqStat);
-      if (periciaKey) {
-        const currentVal = state.pericias[periciaKey] || 0;
-        if (currentVal < skill.reqVal) {
-          return { can: false, reason: `Requer ${CosData.PERICIAS[periciaKey].name} +${skill.reqVal} (atual: ${currentVal})` };
-        }
-      }
-    }
-
-    return { can: true, reason: '' };
+    return checkStatReqs(skill);
   }
 
   // ---- SINGER / ADDITIONAL HELPERS ----
@@ -359,26 +550,44 @@ const App = (() => {
     state.singerFreeIds.clear();
   }
 
+  // Kandra (Forma Natural + Disfarce Kandra) e Sangue-Koloss (Vigor Koloss) vêm de graça no nível 1
+  function applyAncestryGrants() {
+    const tree = RACES[state.profile.race] && RACES[state.profile.race].tree;
+    for (const s of CosData.ADDITIONAL_SKILLS) {
+      if (s.grantedByAncestry && s.cls === tree && !state.unlockedSkills.has(s.id)) {
+        state.unlockedSkills.add(s.id);
+        state.grantedIds.add(s.id);
+      }
+    }
+  }
+
+  function removeAncestryGrants() {
+    // Remove a árvore inteira da ancestralidade anterior (comprados devolvem o ponto)
+    for (const tree of CosData.MISTBORN_ANCESTRY_CLASSES) {
+      if (RACES[state.profile.race] && RACES[state.profile.race].tree === tree) continue;
+      for (const s of CosData.ADDITIONAL_SKILLS.filter(x => x.cls === tree)) {
+        if (!state.unlockedSkills.has(s.id)) continue;
+        state.unlockedSkills.delete(s.id);
+        if (state.grantedIds.has(s.id)) state.grantedIds.delete(s.id);
+        else state.spentTalents = Math.max(0, state.spentTalents - 1);
+      }
+    }
+  }
+
   // ---- SKILL PREREQUISITES CHECK ----
   function canUnlockSkill(skill) {
     if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Ja desbloqueado' };
 
     if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
 
-    // Human ancestry restriction — ambos os talentos do nível 1 são restritos
-    if (state.profile.race === 'human') {
-      if (state.spentTalents === 0) {
-        // 1º talento: deve ser Rank 0 de uma classe mundana
-        if (skill.rank !== 0 || !CosData.CLASSES.includes(skill.cls)) {
-          return { can: false, reason: 'Ancestral Humano: escolha um Rank 0 de classe mundana' };
-        }
-      } else if (state.spentTalents === 1) {
-        // 2º talento: deve ser na mesma classe do 1º
-        if (state.profile.ancestryClass && skill.cls !== state.profile.ancestryClass) {
-          return { can: false, reason: `Ancestral Humano: deve ser da classe ${state.profile.ancestryClass}` };
-        }
-      }
-    }
+    // Especializações exclusivas de uma era (Inventor, Pistoleiro)
+    const eraTag = CosData.SPECIALTY_ERA[skill.sub];
+    const eraBlock = eraTag && eraBlockReason(eraTag);
+    if (eraBlock) return { can: false, reason: eraBlock };
+
+    // Trilha de partida e bônus de ancestralidade (humano / Kandra / Sangue-Koloss)
+    const gate = startingTalentGate(skill);
+    if (!gate.can) return gate;
 
     // Singer ancestry restriction
     if (state.profile.race === 'singer') {
@@ -397,13 +606,13 @@ const App = (() => {
 
     if (skill.deps.length > 0) {
       const anyDepMet = skill.deps.some(depName => {
-        const dep = CosData.findSkillByName(depName, skill.cls);
+        const dep = CosData.findSkillByName(depName, skill.cls, skill.sub);
         if (!dep || !state.unlockedSkills.has(dep.id)) return false;
         // Se o dep foi auto-desbloqueado por compartilhamento, exige que a cadeia
         // anterior a ele nesta classe também esteja completa
         if (state.freeUnlockedSkills.has(dep.id)) {
           return dep.deps.every(ddName => {
-            const dd = CosData.findSkillByName(ddName, skill.cls);
+            const dd = CosData.findSkillByName(ddName, skill.cls, dep.sub);
             return dd && state.unlockedSkills.has(dd.id);
           });
         }
@@ -418,15 +627,8 @@ const App = (() => {
       return { can: false, reason: `Requer: ${root.name}` };
     }
 
-    if (skill.reqStat && skill.reqVal > 0) {
-      const periciaKey = CosData.statToPericia(skill.reqStat);
-      if (periciaKey) {
-        const currentVal = state.pericias[periciaKey] || 0;
-        if (currentVal < skill.reqVal) {
-          return { can: false, reason: `Requer ${CosData.PERICIAS[periciaKey].name} +${skill.reqVal} (atual: ${currentVal})` };
-        }
-      }
-    }
+    const reqCheck = checkStatReqs(skill);
+    if (!reqCheck.can) return reqCheck;
 
     return { can: true, reason: '' };
   }
@@ -438,6 +640,11 @@ const App = (() => {
     if (state.singerFreeIds.has(skill.id)) {
       return { can: false, reason: 'Concedido pela ancestralidade Cantor — não pode ser removido' };
     }
+    if (skill.grantedByAncestry && state.grantedIds.has(skill.id)) {
+      return { can: false, reason: 'Concedido pela ancestralidade — não pode ser removido' };
+    }
+
+    if (CosData.isMetalSkill(skill)) return canRemoveMetalSkill(skill);
 
     // Árvore adicional (Cantor etc.)
     if (isAdditionalSkill(skill)) {
@@ -472,11 +679,11 @@ const App = (() => {
         // Verifica se o filho ainda teria algum outro dep satisfeito após a remoção
         const stillSatisfied = s.deps.some(depName => {
           if (depName === skill.name) return false;
-          const dep = CosData.findSkillByName(depName, s.cls);
+          const dep = CosData.findSkillByName(depName, s.cls, s.sub);
           if (!dep || !state.unlockedSkills.has(dep.id)) return false;
           if (state.freeUnlockedSkills.has(dep.id)) {
             return dep.deps.every(ddName => {
-              const dd = CosData.findSkillByName(ddName, s.cls);
+              const dd = CosData.findSkillByName(ddName, s.cls, dep.sub);
               return dd && state.unlockedSkills.has(dd.id);
             });
           }
@@ -497,7 +704,229 @@ const App = (() => {
     return { can: true, reason: '' };
   }
 
+  // ---- MISTBORN: CAMINHOS METALNASCIDOS E ARTES METÁLICAS ----
+  function metalbornPath() {
+    const mb = state.profile.metalborn;
+    return mb ? CosData.METALBORN_PATHS[mb.path] || null : null;
+  }
+  function metalbornKeySkill() {
+    const mb = state.profile.metalborn;
+    return mb ? CosData.getRootMetalSkill(mb.path) : null;
+  }
+  function hasMetalbornKey() {
+    const k = metalbornKeySkill();
+    return !!(k && state.unlockedSkills.has(k.id));
+  }
+
+  // Árvores de Arte Metálica acessíveis pelos metais do caminho escolhido
+  function getAccessibleArtTrees() {
+    const mb = state.profile.metalborn;
+    if (!mb) return [];
+    const out = [];
+    for (const key of mb.allo || []) { const t = CosData.artTreeName('allo', key); if (t) out.push(t); }
+    for (const key of mb.feru || []) { const t = CosData.artTreeName('feru', key); if (t) out.push(t); }
+    return out;
+  }
+  function isPowerTrained(treeCls) {
+    const r = CosData.getRootMetalSkill(treeCls);
+    return !!(r && state.unlockedSkills.has(r.id));
+  }
+  // Habilidades básicas que ficam fora das árvores: o fluxo de cada surto com
+  // graduação e o poder de cada metal liberado pelo talento-chave Metalnascido
+  // (nascente até concluir o objetivo; Atium já vem completo)
+  function getBasicAbilities() {
+    const out = [];
+    const order = state.profile.radiantClass;
+    for (const key of CosData.RADIANT_CLASS_PERICIAS[order] || []) {
+      if ((state.radiantPericias[key] || 0) < 1) continue;
+      out.push({ id: `fluxo:${key}`, name: `Fluxo ${key === 'transporte' ? 'do' : 'da'} ${CosData.PERICIAS_RADIANTES[key].name}`, cls: order });
+    }
+    if (hasMetalbornKey()) {
+      for (const tree of getAccessibleArtTrees()) {
+        const metal = CosData.getMetalOfTree(tree);
+        const art = CosData.getArtOfTree(tree);
+        if (!metal || !art) continue;
+        const nascent = !isPowerTrained(tree) && !(art === 'allo' && metal.key === 'atium');
+        out.push({ id: `${art}:${metal.key}`, name: tree, cls: tree, nascent });
+      }
+    }
+    return out;
+  }
+
+  function goalNameForTree(treeCls) {
+    return CosData.getArtOfTree(treeCls) === 'feru' ? 'Construir sua Mentemetal' : 'Treinar seu Poder';
+  }
+  // Nascido da Bruma e Feruquemista treinam os metais em pares (ferro/aço, estanho/peltre…)
+  function pairedTree(treeCls) {
+    const path = metalbornPath();
+    if (!path || (path.allo !== 'all' && path.feru !== 'all')) return null;
+    const metal = CosData.getMetalOfTree(treeCls);
+    const art = CosData.getArtOfTree(treeCls);
+    if (!metal || !metal.pair) return null;
+    const t = CosData.artTreeName(art, metal.pair);
+    return getAccessibleArtTrees().includes(t) ? t : null;
+  }
+
+  function getSharedMetalIds(name) {
+    const trees = new Set(getAccessibleArtTrees());
+    const mb = state.profile.metalborn;
+    if (mb) trees.add(mb.path);
+    return CosData.METAL_SKILLS.filter(s => s.name === name && !s.isPower && trees.has(s.cls)).map(s => s.id);
+  }
+
+  function metalDepsMet(skill) {
+    if (!skill.deps.length) return true;
+    return skill.deps.some(depName => {
+      const dep = CosData.findMetalSkillByName(depName, skill.cls);
+      return dep && state.unlockedSkills.has(dep.id);
+    });
+  }
+
+  function canUnlockMetalSkill(skill) {
+    if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Já desbloqueado' };
+    if (!isMistbornActive()) return { can: false, reason: 'Disponível nos cenários Mistborn ou Misto' };
+    if (state.profile.race === 'kandra') return { can: false, reason: 'Kandra não podem seguir caminhos Metalnascidos' };
+    const mb = state.profile.metalborn;
+    if (!mb) return { can: false, reason: 'Escolha um caminho na Tabela Metálica' };
+
+    if (skill.pool === 'path') {
+      if (skill.cls !== mb.path) return { can: false, reason: `Talento do caminho ${skill.cls}` };
+      if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+      const gate = startingTalentGate(skill);
+      if (!gate.can) return gate;
+      if (skill.rank === 0) {
+        const path = metalbornPath();
+        if (!path.ancestries.includes(state.profile.race)) {
+          return { can: false, reason: `Requer ancestralidade ${path.ancestries.map(r => RACES[r].name).join(' ou ')}` };
+        }
+        const eb = eraBlockReason(path.era);
+        return eb ? { can: false, reason: eb } : { can: true, reason: '' };
+      }
+      if (!hasMetalbornKey()) return { can: false, reason: `Requer: ${metalbornKeySkill().name}` };
+      // Duplonato: Ressonância Ligada (metais diferentes) × Compositor (mesmo metal)
+      const sameMetal = (mb.allo || [])[0] && (mb.allo || [])[0] === (mb.feru || [])[0];
+      if (skill.en === 'Alloyed Resonance' && sameMetal) return { can: false, reason: 'Requer poderes de metais diferentes' };
+      if (skill.en === 'Compounder' && !sameMetal) return { can: false, reason: 'Requer Alomancia e Feruquemia do mesmo metal' };
+      if (!metalDepsMet(skill)) return { can: false, reason: 'Pré-requisito de talento não atendido' };
+      return checkStatReqs(skill);
+    }
+
+    // Árvore de Arte Metálica
+    if (!getAccessibleArtTrees().includes(skill.cls)) return { can: false, reason: 'Poder fora do seu caminho Metalnascido' };
+    if (!hasMetalbornKey()) return { can: false, reason: `Requer: ${metalbornKeySkill().name}` };
+    if (skill.isPower) return { can: true, reason: '' }; // objetivo Metalnascido: sem custo de talento
+    if (!isPowerTrained(skill.cls)) return { can: false, reason: `Conclua o objetivo "${goalNameForTree(skill.cls)}" primeiro` };
+    if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+    const gate = startingTalentGate(skill);
+    if (!gate.can) return gate;
+    if (!metalDepsMet(skill)) return { can: false, reason: 'Pré-requisito de talento não atendido' };
+    return checkStatReqs(skill);
+  }
+
+  function canRemoveMetalSkill(skill) {
+    const unlockedIn = cls => CosData.METAL_SKILLS.filter(s => s.cls === cls && s.id !== skill.id && state.unlockedSkills.has(s.id));
+    if (skill.pool === 'path' && skill.rank === 0) {
+      const others = CosData.METAL_SKILLS.some(s => s.id !== skill.id && state.unlockedSkills.has(s.id));
+      return others ? { can: false, reason: 'Remova primeiro os talentos e poderes Metalnascidos' } : { can: true, reason: '' };
+    }
+    if (skill.isPower) {
+      if (unlockedIn(skill.cls).length) return { can: false, reason: 'Remova primeiro os talentos deste poder' };
+      return { can: true, reason: '' };
+    }
+    // Um filho só bloqueia se ficar sem nenhum outro dep satisfeito
+    const orphan = CosData.METAL_SKILLS.some(s => {
+      if (s.cls !== skill.cls || !s.deps.includes(skill.name) || !state.unlockedSkills.has(s.id)) return false;
+      return !s.deps.some(d => {
+        if (d === skill.name) return false;
+        const dep = CosData.findMetalSkillByName(d, s.cls);
+        return dep && state.unlockedSkills.has(dep.id);
+      });
+    });
+    return orphan ? { can: false, reason: 'Outro talento depende exclusivamente deste' } : { can: true, reason: '' };
+  }
+
+  function addPericiaRank(key, delta) {
+    const bucket = CosData.PERICIAS_METALICAS[key] ? state.metalPericias : state.pericias;
+    bucket[key] = Math.max(0, Math.min(getMaxPericiaRank(), (bucket[key] || 0) + delta));
+  }
+
+  function toggleMetalSkill(skill) {
+    const path = metalbornPath();
+    const isKey = skill.pool === 'path' && skill.rank === 0;
+
+    if (state.unlockedSkills.has(skill.id)) {
+      const check = canRemoveMetalSkill(skill);
+      if (!check.can) { notify(check.reason); return false; }
+      state.unlockedSkills.delete(skill.id);
+      state.freeUnlockedSkills.delete(skill.id);
+      if (skill.isPower) {
+        state.grantedIds.delete(skill.id);
+        return true;
+      }
+      for (const sid of getSharedMetalIds(skill.name)) {
+        if (sid !== skill.id && state.freeUnlockedSkills.has(sid)) {
+          state.unlockedSkills.delete(sid);
+          state.freeUnlockedSkills.delete(sid);
+        }
+      }
+      state.spentTalents--;
+      if (isKey && path) {
+        for (const [k, v] of Object.entries(path.grantsRanks || {})) addPericiaRank(k, -v);
+        if (state.profile.ancestryClass === skill.cls) {
+          const pKey = CLASS_INITIAL_PERICIA[skill.cls];
+          if (pKey) addPericiaRank(pKey, -1);
+          state.profile.ancestryClass = null;
+        }
+        state.profile.metalborn.locked = false;
+      }
+      return true;
+    }
+
+    const check = canUnlockMetalSkill(skill);
+    if (!check.can) { notify(check.reason); return false; }
+    state.unlockedSkills.add(skill.id);
+
+    if (skill.isPower) {
+      state.grantedIds.add(skill.id);
+      const pair = pairedTree(skill.cls);
+      const pairRoot = pair && CosData.getRootMetalSkill(pair);
+      if (pairRoot && !state.unlockedSkills.has(pairRoot.id)) {
+        state.unlockedSkills.add(pairRoot.id);
+        state.grantedIds.add(pairRoot.id);
+      }
+      return true;
+    }
+
+    state.spentTalents++;
+    for (const sid of getSharedMetalIds(skill.name)) {
+      if (sid !== skill.id && !state.unlockedSkills.has(sid)) {
+        state.unlockedSkills.add(sid);
+        state.freeUnlockedSkills.add(sid);
+      }
+    }
+
+    if (isKey && path) {
+      state.profile.metalborn.locked = true;
+      for (const [k, v] of Object.entries(path.grantsRanks || {})) addPericiaRank(k, v);
+      if (!state.profile.ancestryClass) {
+        state.profile.ancestryClass = skill.cls;
+        const pKey = CLASS_INITIAL_PERICIA[skill.cls];
+        if (pKey) addPericiaRank(pKey, 1);
+      }
+      // Atium não exige objetivo de treino: o poder completo vem com o Estalo
+      const atium = CosData.artTreeName('allo', 'atium');
+      const atiumRoot = getAccessibleArtTrees().includes(atium) && CosData.getRootMetalSkill(atium);
+      if (atiumRoot && !state.unlockedSkills.has(atiumRoot.id)) {
+        state.unlockedSkills.add(atiumRoot.id);
+        state.grantedIds.add(atiumRoot.id);
+      }
+    }
+    return true;
+  }
+
   async function toggleSkill(skill) {
+    if (CosData.isMetalSkill(skill)) return toggleMetalSkill(skill);
+
     const radiant = isRadiantSkill(skill);
     const additional = isAdditionalSkill(skill);
 
@@ -644,44 +1073,14 @@ const App = (() => {
     if (!modal) return;
 
     const isUnlocked = state.unlockedSkills.has(skill.id);
-    const radiant = isRadiantSkill(skill);
-    const checkUnlock = radiant ? canUnlockRadiantSkill(skill) : canUnlockSkill(skill);
+    const checkUnlock = canUnlockAny(skill);
     const checkRemove = canRemoveSkill(skill);
+    const isPower = !!skill.isPower;
 
     // Requirements HTML
-    let reqHtml = '';
-    if (skill.reqStat === 'level' && skill.reqVal > 0) {
-      const met = state.profile.level >= skill.reqVal;
-      reqHtml += `<div class="modal-req-item ${met ? 'met' : 'unmet'}">Requer Nível ${skill.reqVal} (atual: ${state.profile.level})</div>`;
-    } else if (Array.isArray(skill.reqStat)) {
-      for (let i = 0; i < skill.reqStat.length; i++) {
-        const sName = skill.reqStat[i];
-        const sVal  = Array.isArray(skill.reqVal) ? skill.reqVal[i] : skill.reqVal;
-        const key   = sName.toLowerCase();
-        const curVal = state.radiantPericias[key] || 0;
-        const met   = curVal >= sVal;
-        const pInfo = CosData.PERICIAS_RADIANTES[key];
-        const pName = pInfo ? pInfo.name : sName;
-        reqHtml += `<div class="modal-req-item ${met ? 'met' : 'unmet'}">Requer ${pName} +${sVal} (atual: ${curVal})</div>`;
-      }
-    } else if (skill.reqStat && skill.reqVal > 0) {
-      const pKey = CosData.statToPericia(skill.reqStat);
-      const curVal = pKey ? (state.pericias[pKey] || 0) : 0;
-      const met = curVal >= skill.reqVal;
-      const pName = pKey ? CosData.PERICIAS[pKey].name : skill.reqStat;
-      reqHtml += `<div class="modal-req-item ${met ? 'met' : 'unmet'}">Requer ${pName} +${skill.reqVal} (atual: ${curVal})</div>`;
-    }
-    if (skill.deps.length > 0) {
-      const findFn = radiant ? CosData.findRadiantSkillByName : CosData.findSkillByName;
-      for (const dep of skill.deps) {
-        const depSkill = findFn(dep, skill.cls);
-        const met = depSkill && state.unlockedSkills.has(depSkill.id);
-        reqHtml += `<div class="modal-req-item ${met ? 'met' : 'unmet'}">Requer: ${dep}</div>`;
-      }
-    }
-    if (skill.prereqText) {
-      reqHtml += `<div class="modal-req-item special">Especial: ${skill.prereqText}</div>`;
-    }
+    const reqHtml = buildReqLines(skill).map(l =>
+      `<div class="modal-req-item ${l.special ? 'special' : (l.met ? 'met' : 'unmet')}">${l.special ? 'Especial: ' : 'Requer '}${l.text}</div>`
+    ).join('');
 
     // Status
     let statusClass, statusText;
@@ -698,16 +1097,17 @@ const App = (() => {
 
     // Action button
     let actionHtml = '';
+    const goal = isPower ? goalNameForTree(skill.cls) : '';
     if (isUnlocked) {
       actionHtml = `<button class="modal-action-btn remove ${checkRemove.can ? '' : 'disabled'}" id="modal-action">
-        Remover Talento
+        ${isPower ? 'Desfazer Objetivo' : 'Remover Talento'}
       </button>`;
       if (!checkRemove.can) {
         actionHtml += `<div class="modal-action-reason">${checkRemove.reason}</div>`;
       }
     } else {
       actionHtml = `<button class="modal-action-btn buy ${checkUnlock.can ? '' : 'disabled'}" id="modal-action">
-        Comprar Talento (1 ponto)
+        ${isPower ? `Concluir Objetivo: ${goal} (sem custo)` : 'Comprar Talento (1 ponto)'}
       </button>`;
       if (!checkUnlock.can) {
         actionHtml += `<div class="modal-action-reason">${checkUnlock.reason}</div>`;
@@ -725,17 +1125,24 @@ const App = (() => {
           <div class="modal-skill-name" style="color: ${clsColor(skill.cls)}">${skill.name}</div>
           <div class="modal-skill-meta">
             <span class="modal-class">${skill.cls}</span>
-            ${skill.sub !== '-' ? `<span class="modal-sub">${skill.sub}</span>` : ''}
-            <span class="modal-rank">Rank ${skill.rank}</span>
+            ${skill.sub !== '-' && skill.sub !== skill.cls ? `<span class="modal-sub">${skill.sub}</span>` : ''}
+            <span class="modal-rank">${isPower ? 'Poder' : `Rank ${skill.rank}`}</span>
             <span class="modal-status ${statusClass}">${statusText}</span>
           </div>
+          ${skill.en ? `<div class="modal-skill-en">${skill.en}</div>` : ''}
         </div>
 
         <div class="modal-body">
           ${skill.activation ? `<div class="modal-activation">${ActivationIcons.badge(skill.activation)}</div>` : ''}
+          ${isPower ? powerInfoHtml(skill) : ''}
           <div class="modal-desc-section">
             <div class="modal-desc-label">Descrição</div>
             <div class="modal-desc-text">${skill.description || '<em style="color:var(--text-muted);font-size:12px;">Carregue o livro em PDF na barra lateral para ver a descrição completa.</em>'}</div>
+            ${skill.descriptionOriginal ? `
+            <details class="modal-desc-original">
+              <summary>Tradução automática — ver original em inglês</summary>
+              <div class="modal-desc-text">${skill.descriptionOriginal}</div>
+            </details>` : ''}
           </div>
 
           ${reqHtml ? `<div class="modal-req-section"><div class="modal-desc-label">Requisitos</div>${reqHtml}</div>` : ''}
@@ -795,12 +1202,16 @@ const App = (() => {
     renderPericias();
     renderLevelDisplay();
     renderRadiantSection();
+    renderMetalbornSection();
+    renderSettingBadge();
     renderTalents();
     renderPortrait();
     // Update race display label in sidebar
     const raceLabel = document.getElementById('char-race-display');
     if (raceLabel) {
-      raceLabel.textContent = state.profile.race === 'singer' ? 'Cantor' : 'Humano';
+      const race = RACES[state.profile.race] || RACES.human;
+      const bless = state.profile.race === 'kandra' && KANDRA_BLESSINGS[state.profile.kandraBlessing];
+      raceLabel.textContent = race.name + (bless ? ` · ${bless.name.replace('Bênção d', 'B. d')}` : '');
     }
     // Update name display
     const nameInput = document.getElementById('char-name');
@@ -819,6 +1230,7 @@ const App = (() => {
       { pool: CosData.SKILLS,            type: 'mundane'   },
       { pool: CosData.RADIANT_SKILLS,    type: 'radiant'   },
       { pool: CosData.ADDITIONAL_SKILLS, type: 'additional'},
+      { pool: CosData.METAL_SKILLS,      type: 'metal'     },
     ];
 
     // Map id → skill object for fast lookup
@@ -932,8 +1344,8 @@ const App = (() => {
           <ul class="talents-group-list">
             ${skills.map(s => `
               <li class="talent-item">
-                <span class="talent-rank">R${s.rank}</span>
-                <span class="talent-name">${s.name}</span>
+                <span class="talent-rank">${s.isPower ? 'P' : 'R' + s.rank}</span>
+                <span class="talent-name">${s.isPower ? 'Poder completo' : s.name}</span>
               </li>`).join('')}
           </ul>
         </div>`;
@@ -959,15 +1371,18 @@ const App = (() => {
       if (img.src !== portrait) img.src = portrait;
       if (clearBtn) clearBtn.style.display = 'block';
     } else {
-      // Show placeholder
-      const hasPlaceholder = wrap.querySelector('.char-portrait-placeholder');
-      if (!hasPlaceholder) {
-        wrap.innerHTML = `
-          <svg class="char-portrait-placeholder" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="20" cy="15" r="7" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
-            <path d="M6 36c0-7.732 6.268-14 14-14s14 6.268 14 14" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
-          </svg>
-          <div class="char-portrait-hint">Aparência</div>`;
+      // Sem imagem própria: arte da ancestralidade, esmaecida, com a dica para trocar
+      const art = raceArt(state.profile.race);
+      const current = wrap.querySelector('img.char-portrait-default');
+      if (!current || current.getAttribute('src') !== art) {
+        wrap.innerHTML = art
+          ? `<img class="char-portrait-default" src="${art}" alt="">
+             <div class="char-portrait-hint">Aparência</div>`
+          : `<svg class="char-portrait-placeholder" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <circle cx="20" cy="15" r="7" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+               <path d="M6 36c0-7.732 6.268-14 14-14s14 6.268 14 14" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+             </svg>
+             <div class="char-portrait-hint">Aparência</div>`;
       }
       if (clearBtn) clearBtn.style.display = 'none';
     }
@@ -1006,7 +1421,7 @@ const App = (() => {
     const allUrls = [...new Set([
       ...Object.values(WHEEL_SVG_MAP),
       ...WHEEL_SURGES.map(s => s.svg),
-      'svg/Cosmere_symbol.svg',
+      'svg/mundos/roshar.svg',
     ])];
     await Promise.all(allUrls.map(fetchSvgText));
 
@@ -1132,8 +1547,8 @@ const App = (() => {
       centerEl.classList.add('chosen');
       centerEl.innerHTML = `<img src="${glyphSrc}" alt="${selected}" style="filter:drop-shadow(0 0 14px ${color})">`;
     } else {
-      const cosmereText = _wheelSvgCache['svg/Cosmere_symbol.svg'] || null;
-      const cosmereSrc = coloredSvgSrc(cosmereText, '#d4a853') || 'svg/Cosmere_symbol.svg';
+      const cosmereText = _wheelSvgCache['svg/mundos/roshar.svg'] || null;
+      const cosmereSrc = coloredSvgSrc(cosmereText, '#d4a853') || 'svg/mundos/roshar.svg';
       centerEl.classList.remove('chosen');
       centerEl.innerHTML = `<img src="${cosmereSrc}" alt="Cosmere">`;
     }
@@ -1532,6 +1947,233 @@ const App = (() => {
     });
   }
 
+  // ---- SELO DO CENÁRIO (cabeçalho da barra lateral) ----
+  function renderSettingBadge() {
+    const el = document.getElementById('setting-badge');
+    if (!el) return;
+    const s = CosData.SETTINGS[state.profile.setting] || CosData.SETTINGS.stormlight;
+    const era = isMistbornActive() && state.profile.era !== 'livre' ? ` · Era ${state.profile.era}` : '';
+    el.innerHTML = `<span class="setting-badge-name">${s.name}</span><span class="setting-badge-sub">${s.sub}${era}</span>`;
+    const title = document.querySelector('.sidebar-header h1');
+    if (title) title.textContent = state.profile.setting === 'mistborn' ? 'Mistborn RPG' : 'Cosmere RPG';
+    const radSection = document.getElementById('radiant-section');
+    if (radSection) radSection.style.display = CosData.hasStormlight() ? '' : 'none';
+    const metSection = document.getElementById('metalborn-section');
+    if (metSection) metSection.style.display = isMistbornActive() ? '' : 'none';
+  }
+
+  // ---- CAMINHO METALNASCIDO (barra lateral) ----
+  function renderMetalbornSection() {
+    const container = document.getElementById('metalborn-select');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!isMistbornActive()) return;
+
+    if (state.profile.race === 'kandra') {
+      container.innerHTML = '<div class="radiant-placeholder">Kandra não podem ser Metalnascidos</div>';
+      return;
+    }
+    const mb = state.profile.metalborn;
+    if (!mb) {
+      const btn = document.createElement('button');
+      btn.className = 'radiant-choose-btn metalborn-choose-btn';
+      btn.textContent = '◈  Abrir a Tabela Metálica';
+      btn.addEventListener('click', () => MetalTable.show());
+      container.appendChild(btn);
+      return;
+    }
+    const color = clsColor(mb.path);
+    const chips = [...(mb.allo || []).map(k => ({ k, art: 'allo' })), ...(mb.feru || []).map(k => ({ k, art: 'feru' }))];
+    const many = chips.length > 4;
+    const div = document.createElement('div');
+    div.className = 'radiant-locked-display metalborn-display';
+    div.style.borderColor = color + '60';
+    div.innerHTML = `
+      <div class="radiant-locked-info" style="width:100%">
+        <div class="radiant-locked-name" style="color:${color}">${mb.path}</div>
+        <div class="metalborn-chips">
+          ${many ? `<span class="metal-chip">${chips.length} poderes ${mb.allo?.length ? 'alomânticos' : 'feruquímicos'}</span>` :
+            chips.map(({ k, art }) => {
+              const m = CosData.getMetal(k);
+              const trained = isPowerTrained(m[art].tree);
+              return `<span class="metal-chip ${trained ? 'trained' : ''}" style="--metal-color:${m.color}" title="${m[art].tree}${trained ? ' — treinado' : ' — nascente'}">
+                <img src="${m.svg}" alt="">${art === 'allo' ? 'A' : 'F'} · ${m.name}</span>`;
+            }).join('')}
+        </div>
+        ${!mb.locked ? `<div style="margin-top:6px;"><button class="btn" style="font-size:10px;padding:3px 8px;" id="metalborn-alter-btn">Alterar</button></div>` : ''}
+      </div>`;
+    container.appendChild(div);
+    div.querySelector('#metalborn-alter-btn')?.addEventListener('click', () => MetalTable.show());
+  }
+
+  // ---- TABELA METÁLICA (escolha do caminho Metalnascido e dos metais) ----
+  const PATH_BLURB = {
+    'Brumoso':          'Um único poder alomântico, dominado como ninguém.',
+    'Nascido da Bruma': 'Todos os poderes alomânticos, treinados em pares.',
+    'Feruquemista':     'Todas as mentemetais — o legado dos Guardadores de Terris.',
+    'Ferroso':          'Mestre de uma única mentemetal.',
+    'Duplonato':        'Um poder alomântico e um feruquímico, que podem se combinar.',
+  };
+
+  const MetalTable = (() => {
+    let draft = null;
+
+    function pathBlock(pathName) {
+      const path = CosData.METALBORN_PATHS[pathName];
+      if (!path) return 'Caminho desconhecido';
+      if (!path.ancestries.includes(state.profile.race)) {
+        return `Requer ${path.ancestries.map(r => RACES[r].name).join(' ou ')}`;
+      }
+      return eraBlockReason(path.era);
+    }
+
+    function metalsForArt(art) {
+      return CosData.METALS.filter(m => CosData.eraAllows(m[art].era, state.profile.era));
+    }
+
+    function needs(pathName) {
+      const p = CosData.METALBORN_PATHS[pathName];
+      return { allo: p.allo, feru: p.feru };
+    }
+
+    function show() {
+      if (state.profile.metalborn && state.profile.metalborn.locked) {
+        notify('O caminho Metalnascido já foi despertado — só um Reset o redefine.');
+        return;
+      }
+      const cur = state.profile.metalborn;
+      draft = cur ? { path: cur.path, allo: [...(cur.allo || [])], feru: [...(cur.feru || [])] } : { path: null, allo: [], feru: [] };
+      let overlay = document.getElementById('metal-table');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'metal-table';
+        document.body.appendChild(overlay);
+      }
+      render();
+      // Reflow em vez de requestAnimationFrame: com a aba em segundo plano o rAF
+      // atrasa e reabria a tabela depois de confirmada
+      void overlay.offsetWidth;
+      overlay.classList.add('visible');
+    }
+
+    function hide() {
+      document.getElementById('metal-table')?.classList.remove('visible');
+    }
+
+    function ringHtml(art) {
+      const n = needs(draft.path)[art];
+      const available = metalsForArt(art);
+      const all = n === 'all';
+      const selected = draft[art];
+      const order = CATEGORY_ORDER_APP[art];
+      const metals = [...CosData.METALS].sort((a, b) => {
+        const ca = order.indexOf(a[art].category), cb = order.indexOf(b[art].category);
+        return ca !== cb ? ca - cb : CosData.METALS.indexOf(a) - CosData.METALS.indexOf(b);
+      });
+      const N = metals.length;
+      const size = 440, cx = size / 2, R = 172;
+      const nodes = metals.map((m, i) => {
+        const a = -Math.PI / 2 + (2 * Math.PI * i / N);
+        const x = cx + Math.cos(a) * R, y = cx + Math.sin(a) * R;
+        const ok = available.includes(m);
+        const sel = all ? ok : selected.includes(m.key);
+        const info = m[art];
+        const title = `${m.name} — ${info.effect}\n${art === 'allo' ? info.misting : info.ferring} · ${info.category} · ${CosData.ERA_LABEL[info.era]}${ok ? '' : ' (indisponível nesta era)'}`;
+        return `<button class="mt-metal ${sel ? 'selected' : ''} ${ok ? '' : 'unavailable'} ${all ? 'fixed' : ''}"
+            style="left:${x}px;top:${y}px;--metal-color:${m.color}" data-art="${art}" data-key="${m.key}" title="${title}">
+            <img src="${m.svg}" alt=""><span>${m.name}</span></button>`;
+      }).join('');
+      const pick = selected.map(k => CosData.getMetal(k)).filter(Boolean)[0];
+      const center = all
+        ? `<div class="mt-center-title">${art === 'allo' ? 'Alomancia' : 'Feruquemia'}</div><div class="mt-center-sub">todos os poderes da era</div>`
+        : pick
+          ? `<img src="${pick.svg}" alt="" style="--metal-color:${pick.color}"><div class="mt-center-title">${pick.name}</div>
+             <div class="mt-center-sub">${art === 'allo' ? pick.allo.misting : pick.feru.ferring}</div>
+             <div class="mt-center-effect">${pick[art].effect}</div>`
+          : `<div class="mt-center-title">${art === 'allo' ? 'Alomancia' : 'Feruquemia'}</div><div class="mt-center-sub">escolha um metal</div>`;
+      return `<div class="mt-ring-wrap">
+        <div class="mt-ring-label">${art === 'allo' ? 'Tabela Alomântica' : 'Tabela Feruquímica'}</div>
+        <div class="mt-ring" style="width:${size}px;height:${size}px">
+          <svg class="mt-ring-svg" viewBox="0 0 ${size} ${size}"><circle cx="${cx}" cy="${cx}" r="${R}" />
+            <circle cx="${cx}" cy="${cx}" r="${R - 46}" class="inner"/></svg>
+          ${nodes}
+          <div class="mt-center">${center}</div>
+        </div></div>`;
+    }
+
+    function render() {
+      const overlay = document.getElementById('metal-table');
+      const paths = Object.keys(CosData.METALBORN_PATHS);
+      const step2 = !!draft.path;
+      const n = step2 ? needs(draft.path) : null;
+      const ready = step2 && (n.allo === 'all' || n.allo === draft.allo.length) && (n.feru === 'all' || n.feru === draft.feru.length);
+      overlay.innerHTML = `
+        <div class="mt-mist"></div>
+        <button class="mt-close" aria-label="Fechar">&times;</button>
+        <div class="mt-content">
+          <div class="mt-kicker">${step2 ? 'Passo 2 de 2' : 'Passo 1 de 2'}</div>
+          <h2 class="mt-title">${step2 ? 'Escolha seus metais' : 'Escolha seu caminho Metalnascido'}</h2>
+          <p class="mt-subtitle">${step2
+            ? 'Os poderes começam nascentes. Complete o objetivo de cada um na árvore para liberar seus talentos.'
+            : 'Caminhos Metalnascidos são exclusivos: depois de comprar o talento-chave, não há volta.'}</p>
+          ${!step2 ? `<div class="mt-paths">
+            ${paths.map(p => {
+              const block = pathBlock(p);
+              const info = CosData.METALBORN_PATHS[p];
+              return `<button class="mt-path ${block ? 'blocked' : ''}" data-path="${p}" style="--path-color:${clsColor(p)}">
+                <div class="mt-path-name">${p}</div>
+                <div class="mt-path-en">${info.en} · ${CosData.ERA_LABEL[info.era]}</div>
+                <div class="mt-path-desc">${PATH_BLURB[p] || ''}</div>
+                <div class="mt-path-key">Talento-chave: ${info.key}</div>
+                ${block ? `<div class="mt-path-block">${block}</div>` : ''}
+              </button>`;
+            }).join('')}
+          </div>` : `<div class="mt-rings">
+            ${n.allo ? ringHtml('allo') : ''}
+            ${n.feru ? ringHtml('feru') : ''}
+          </div>
+          <div class="mt-actions">
+            <button class="btn mt-back">Voltar</button>
+            <button class="btn primary mt-confirm" ${ready ? '' : 'disabled'}>Confirmar ${draft.path}</button>
+          </div>`}
+        </div>`;
+
+      overlay.querySelector('.mt-close').addEventListener('click', hide);
+      overlay.querySelectorAll('.mt-path').forEach(btn => btn.addEventListener('click', () => {
+        const block = pathBlock(btn.dataset.path);
+        if (block) { notify(block); return; }
+        draft.path = btn.dataset.path;
+        const nn = needs(draft.path);
+        draft.allo = nn.allo === 'all' ? metalsForArt('allo').map(m => m.key) : draft.allo.slice(0, nn.allo || 0);
+        draft.feru = nn.feru === 'all' ? metalsForArt('feru').map(m => m.key) : draft.feru.slice(0, nn.feru || 0);
+        render();
+      }));
+      overlay.querySelectorAll('.mt-metal').forEach(btn => btn.addEventListener('click', () => {
+        const art = btn.dataset.art;
+        if (needs(draft.path)[art] === 'all') return;
+        if (btn.classList.contains('unavailable')) { notify('Metal indisponível na era escolhida'); return; }
+        draft[art] = [btn.dataset.key];
+        render();
+      }));
+      overlay.querySelector('.mt-back')?.addEventListener('click', () => { draft.path = null; render(); });
+      overlay.querySelector('.mt-confirm')?.addEventListener('click', () => {
+        state.profile.metalborn = { path: draft.path, allo: draft.allo, feru: draft.feru, locked: false };
+        hide();
+        state.activeClass = draft.path;
+        renderSidebar();
+        renderClassTabs();
+        triggerTabSlide(() => rebuildTree());
+      });
+    }
+
+    return { show, hide };
+  })();
+
+  const CATEGORY_ORDER_APP = {
+    allo: ['Físico', 'Mental', 'Temporal', 'Aprimoramento', 'Divino'],
+    feru: ['Físico', 'Cognitivo', 'Híbrido', 'Espiritual', 'Divino'],
+  };
+
   function renderRadiantSection() {
     const container = document.getElementById('radiant-select');
     if (!container) return;
@@ -1608,15 +2250,17 @@ const App = (() => {
     if (!container) return;
     container.innerHTML = '';
 
+    const bonus = getAttrBonus();
     for (const [key, info] of Object.entries(CosData.ATTRIBUTES)) {
       const val = state.attributes[key];
+      const b = bonus[key] || 0;
       const div = document.createElement('div');
       div.className = 'attr-item';
       div.innerHTML = `
         <span class="attr-name">${info.abbr}</span>
         <div class="attr-controls">
           <button class="attr-btn" data-attr="${key}" data-dir="-1">&minus;</button>
-          <span class="attr-val">${val}</span>
+          <span class="attr-val" ${b ? `title="${val} base + ${b} de bônus"` : ''}>${val + b}${b ? '<sup class="attr-bonus">+' + b + '</sup>' : ''}</span>
           <button class="attr-btn" data-attr="${key}" data-dir="1">+</button>
         </div>
       `;
@@ -1628,9 +2272,9 @@ const App = (() => {
         const attr = btn.dataset.attr;
         const dir = parseInt(btn.dataset.dir);
         const newVal = state.attributes[attr] + dir;
-        
-        // Define o máximo permitido baseado no nível atual
-        const maxVal = state.profile.level === 1 ? 3 : 5;
+
+        // Define o máximo permitido baseado no nível atual (Sangue-Koloss: +1 em Força)
+        const maxVal = getAttrBaseMax(attr);
 
         if (newVal < 0) return;
         
@@ -1726,10 +2370,12 @@ const App = (() => {
       return spheresHtml;
     };
 
+    const effAttr = effectiveAttributes();
+
     // 1. Perícias Base
     for (const [key, info] of Object.entries(CosData.PERICIAS)) {
       const rank = state.pericias[key] || 0;
-      const attrVal = state.attributes[info.attr] || 0;
+      const attrVal = effAttr[info.attr] || 0;
       const total = rank + attrVal;
       const color = ATTR_COLORS[info.attr] || '#fff';
 
@@ -1760,7 +2406,7 @@ const App = (() => {
       for (const key of perKeys) {
         const info = CosData.PERICIAS_RADIANTES[key];
         const rank = state.radiantPericias[key] || 0;
-        const attrVal = state.attributes[info.attr] || 0;
+        const attrVal = effAttr[info.attr] || 0;
         const total = rank + attrVal;
         const canoneBlocked = isCanoneLockedSurge(key);
         const color = canoneBlocked ? '#666' : (ATTR_COLORS[info.attr] || clsColor(cls));
@@ -1780,12 +2426,43 @@ const App = (() => {
       }
     }
 
+    // 3. Perícias Investidas (Alomancia / Feruquemia) — só com o talento-chave Metalnascido
+    const metalFree = getMetalFreeRanks();
+    const metalKeys = Object.keys(CosData.PERICIAS_METALICAS)
+      .filter(k => (metalFree[k] || 0) > 0 || (state.metalPericias[k] || 0) > 0);
+    if (isMistbornActive() && metalKeys.length) {
+      const mcol = clsColor(state.profile.metalborn ? state.profile.metalborn.path : '') || '#8fb4d8';
+      const sep = document.createElement('div');
+      sep.className = 'pericia-separator';
+      sep.style = `grid-column: 1/-1; margin: 10px 0 5px; font-size: 10px; color: ${mcol}; border-bottom: 1px solid ${mcol}44; text-transform: uppercase;`;
+      sep.textContent = 'Artes Metálicas';
+      container.appendChild(sep);
+      for (const key of metalKeys) {
+        const info = CosData.PERICIAS_METALICAS[key];
+        const rank = state.metalPericias[key] || 0;
+        const total = rank + (effAttr[info.attr] || 0);
+        const color = ATTR_COLORS[info.attr] || mcol;
+        const div = document.createElement('div');
+        div.className = 'pericia-item';
+        div.innerHTML = `
+          <span class="pericia-name" style="color:${mcol}">
+            ${info.name} <small style="opacity:0.5;color:${color}">(${CosData.ATTRIBUTES[info.attr].abbr})</small>
+          </span>
+          <div class="pericia-controls-new">
+            ${createSpheres(rank, key, 'metal', color)}
+            <span class="pericia-total-val">${total}</span>
+          </div>`;
+        container.appendChild(div);
+      }
+    }
+
     // Eventos de clique nas esferas
     container.querySelectorAll('.sphere-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.idx);
         const key = btn.dataset.key;
         const isRadiant = btn.dataset.rad === 'true';
+        const isMetal = btn.dataset.rad === 'metal';
         const canoneBlocked = btn.dataset.canoneLocked === 'true';
 
         if (canoneBlocked) {
@@ -1802,10 +2479,17 @@ const App = (() => {
           return;
         }
 
-        const currentVal = isRadiant ? (state.radiantPericias[key] || 0) : (state.pericias[key] || 0);
+        const bucket = isRadiant ? state.radiantPericias : isMetal ? state.metalPericias : state.pericias;
+        const currentVal = bucket[key] || 0;
         const newVal = (currentVal === idx) ? idx - 1 : idx;
 
-        if (!isRadiant && key === initialClassKey && newVal < 1) {
+        if (isMetal) {
+          const floor = (getMetalFreeRanks()[key] || 0) + (key === initialClassKey ? 1 : 0);
+          if (newVal < floor) {
+            notify(`Os ${floor} primeiros ranks de ${CosData.PERICIAS_METALICAS[key].name} vêm do seu caminho Metalnascido.`);
+            return;
+          }
+        } else if (!isRadiant && key === initialClassKey && newVal < 1) {
           notify(`O 1º Rank de ${CosData.PERICIAS[key].name} é fixo pela sua Trilha Inicial.`);
           return;
         }
@@ -1822,8 +2506,7 @@ const App = (() => {
           return;
         }
 
-        if (isRadiant) state.radiantPericias[key] = newVal;
-        else state.pericias[key] = newVal;
+        bucket[key] = newVal;
 
         renderSidebar();
         rebuildTree(true);
@@ -1872,13 +2555,20 @@ const App = (() => {
         state.activeClass = cls;
         renderClassTabs();
 
+        // A roleta 3D só conhece as trilhas heroicas/radiante/ancestralidade;
+        // vindo da aba Metalnascida, usa o slide simples.
+        if (oldClass !== '_all' && oldClass === getMetalbornTab()) {
+          triggerTabSlide(() => rebuildTree());
+          return;
+        }
+
         // Agrupa o estado necessário para o renderer
         const stateData = {
           unlockedSkills: state.unlockedSkills,
           pericias: state.pericias,
           canUnlockFn: canUnlockCheck,
-          radiantClass: state.profile.radiantClass,
-          additionalClasses: state.profile.race === 'singer' ? ['Cantor'] : []
+          radiantClass: CosData.hasStormlight() ? state.profile.radiantClass : null,
+          additionalClasses: getAdditionalTreeClasses()
         };
 
         // Chama a nossa nova transição 3D em vez do triggerTabSlide
@@ -1889,8 +2579,29 @@ const App = (() => {
       container.appendChild(btn);
     }
 
+    // Aba Metalnascida (caminho + Tabela Alomântica/Feruquímica)
+    const mbTab = getMetalbornTab();
+    if (mbTab) {
+      const msep = document.createElement('span');
+      msep.className = 'tab-separator tab-separator-metal';
+      container.appendChild(msep);
+      const mColor = clsColor(mbTab);
+      const mbtn = document.createElement('button');
+      mbtn.className = 'class-tab tab-metalborn' + (mbTab === state.activeClass ? ' active' : '');
+      mbtn.textContent = mbTab;
+      mbtn.style.borderBottomColor = mbTab === state.activeClass ? mColor : 'transparent';
+      mbtn.style.color = mbTab === state.activeClass ? mColor : '';
+      mbtn.addEventListener('click', () => {
+        if (state.activeClass === mbTab) return;
+        state.activeClass = mbTab;
+        renderClassTabs();
+        triggerTabSlide(() => rebuildTree());
+      });
+      container.appendChild(mbtn);
+    }
+
     // Radiant tabs (only if a class is chosen and level >= 2)
-    if (state.profile.radiantClass && state.profile.level >= 2) {
+    if (CosData.hasStormlight() && state.profile.radiantClass && state.profile.level >= 2) {
       const rsep = document.createElement('span');
       rsep.className = 'tab-separator tab-separator-radiant';
       container.appendChild(rsep);
@@ -1911,21 +2622,21 @@ const App = (() => {
       container.appendChild(rbtn);
     }
 
-    // Cantor tab (apenas para jogadores com ancestralidade Cantor)
-    if (state.profile.race === 'singer') {
+    // Aba da ancestralidade (Cantor, Kandra ou Sangue-Koloss)
+    for (const tree of getAdditionalTreeClasses()) {
       const csep = document.createElement('span');
       csep.className = 'tab-separator';
       container.appendChild(csep);
 
-      const cColor = clsColor('Cantor');
+      const cColor = clsColor(tree);
       const cbtn = document.createElement('button');
-      cbtn.className = 'class-tab tab-additional' + ('Cantor' === state.activeClass ? ' active' : '');
-      cbtn.textContent = 'Cantor';
-      cbtn.style.borderBottomColor = 'Cantor' === state.activeClass ? cColor : 'transparent';
-      cbtn.style.color = 'Cantor' === state.activeClass ? cColor : '';
+      cbtn.className = 'class-tab tab-additional' + (tree === state.activeClass ? ' active' : '');
+      cbtn.textContent = tree;
+      cbtn.style.borderBottomColor = tree === state.activeClass ? cColor : 'transparent';
+      cbtn.style.color = tree === state.activeClass ? cColor : '';
       cbtn.addEventListener('click', () => {
-        if (state.activeClass === 'Cantor') return;
-        state.activeClass = 'Cantor';
+        if (state.activeClass === tree) return;
+        state.activeClass = tree;
         renderClassTabs();
         triggerTabSlide(() => rebuildTree());
       });
@@ -1938,8 +2649,7 @@ const App = (() => {
     const tt = document.getElementById('tooltip');
     if (!tt) return;
 
-    const rad = isRadiantSkill(skill);
-    const check = rad ? canUnlockRadiantSkill(skill) : canUnlockSkill(skill);
+    const check = canUnlockAny(skill);
     const isUnlocked = state.unlockedSkills.has(skill.id);
 
     const statusText = isUnlocked ? '<span style="color:var(--accent-green)">Desbloqueado</span>' :
@@ -1947,45 +2657,16 @@ const App = (() => {
                                     '<span style="color:var(--text-muted)">Bloqueado</span>';
 
     // Build prerequisites lines
-    let reqLines = '';
-    if (skill.reqStat === 'level' && skill.reqVal > 0) {
-      const met = state.profile.level >= skill.reqVal;
-      reqLines += `<div class="tt-req ${met ? 'met' : 'unmet'}">Nível ${skill.reqVal} (${state.profile.level})</div>`;
-    } else if (Array.isArray(skill.reqStat)) {
-      for (let i = 0; i < skill.reqStat.length; i++) {
-        const sName = skill.reqStat[i];
-        const sVal  = Array.isArray(skill.reqVal) ? skill.reqVal[i] : skill.reqVal;
-        const key   = sName.toLowerCase();
-        const curVal = state.radiantPericias[key] || 0;
-        const met   = curVal >= sVal;
-        const pInfo = CosData.PERICIAS_RADIANTES[key];
-        const pName = pInfo ? pInfo.name : sName;
-        reqLines += `<div class="tt-req ${met ? 'met' : 'unmet'}">${pName} +${sVal} (${curVal})</div>`;
-      }
-    } else if (skill.reqStat && skill.reqVal > 0) {
-      const pKey = CosData.statToPericia(skill.reqStat);
-      const curVal = pKey ? (state.pericias[pKey] || 0) : 0;
-      const met = curVal >= skill.reqVal;
-      const pName = pKey ? CosData.PERICIAS[pKey].name : skill.reqStat;
-      reqLines += `<div class="tt-req ${met ? 'met' : 'unmet'}">${pName} +${skill.reqVal} (${curVal})</div>`;
-    }
-    if (skill.deps.length > 0) {
-      const findFn = rad ? CosData.findRadiantSkillByName : CosData.findSkillByName;
-      for (const dep of skill.deps) {
-        const depSkill = findFn(dep, skill.cls);
-        const met = depSkill && state.unlockedSkills.has(depSkill.id);
-        reqLines += `<div class="tt-req ${met ? 'met' : 'unmet'}">Requer: ${dep}</div>`;
-      }
-    }
-    if (skill.prereqText) {
-      reqLines += `<div class="tt-req special">${skill.prereqText}</div>`;
-    }
+    const reqLines = buildReqLines(skill).map(l =>
+      `<div class="tt-req ${l.special ? 'special' : (l.met ? 'met' : 'unmet')}">${l.text}</div>`
+    ).join('');
 
+    const subLabel = skill.sub !== '-' && skill.sub !== skill.cls ? ' -- ' + skill.sub : '';
     tt.innerHTML = `
       <div class="tt-name" style="color: ${clsColor(skill.cls)}">${skill.name}</div>
-      <div class="tt-sub">${skill.cls}${skill.sub !== '-' ? ' -- ' + skill.sub : ''} ${statusText}</div>
+      <div class="tt-sub">${skill.cls}${subLabel} ${statusText}</div>
       <div class="tt-meta-row">
-        <span class="tt-rank">Rank ${skill.rank}</span>
+        <span class="tt-rank">${skill.isPower ? 'Poder' : `Rank ${skill.rank}`}</span>
         ${skill.activation ? ActivationIcons.icon(skill.activation) : ''}
       </div>
       ${skill.desc ? `<div class="tt-desc">${skill.desc}</div>` : ''}
@@ -2081,14 +2762,90 @@ const App = (() => {
     'Plasmador':                 '#c084fc',
     'Guardião das Pedras':       '#a87d4e',
     'Vinculadores':              '#d4a853',
+    // Scadrial — ancestralidades e caminhos Metalnascidos
+    'Kandra':           '#6fbfa4',
+    'Sangue-Koloss':    '#5b7fc7',
+    'Brumoso':          '#8fb4d8',
+    'Nascido da Bruma': '#c9d3e0',
+    'Feruquemista':     '#d1a064',
+    'Ferroso':          '#c98b56',
+    'Duplonato':        '#a9a3d6',
   };
 
   function clsColor(cls) {
-    return CLASS_COLORS[cls] || 'var(--text-primary)';
+    if (CLASS_COLORS[cls]) return CLASS_COLORS[cls];
+    const metal = CosData.getMetalOfTree(cls);
+    return metal ? metal.color : 'var(--text-primary)';
   }
 
   function isRadiantSkill(skill) {
     return CosData.RADIANT_CLASSES.includes(skill.cls);
+  }
+
+  function canUnlockAny(skill) {
+    if (CosData.isMetalSkill(skill)) return canUnlockMetalSkill(skill);
+    if (isRadiantSkill(skill))       return canUnlockRadiantSkill(skill);
+    if (isAdditionalSkill(skill))    return canUnlockAdditionalSkill(skill);
+    return canUnlockSkill(skill);
+  }
+
+  function findDepSkill(skill, depName) {
+    if (CosData.isMetalSkill(skill)) return CosData.findMetalSkillByName(depName, skill.cls);
+    if (isRadiantSkill(skill))       return CosData.findRadiantSkillByName(depName, skill.cls);
+    if (isAdditionalSkill(skill))    return CosData.findAdditionalSkillByName(depName, skill.cls);
+    return CosData.findSkillByName(depName, skill.cls, skill.sub);
+  }
+
+  // Linhas de requisito (tooltip e modal): { met, text, special }
+  function buildReqLines(skill) {
+    const lines = [];
+    if (skill.reqStat === 'level' && skill.reqVal > 0 && !skill.reqs) {
+      lines.push({ met: state.profile.level >= skill.reqVal, text: `Nível ${skill.reqVal} (atual: ${state.profile.level})` });
+    } else if (Array.isArray(skill.reqStat)) {
+      for (let i = 0; i < skill.reqStat.length; i++) {
+        const sName = skill.reqStat[i];
+        const sVal  = Array.isArray(skill.reqVal) ? skill.reqVal[i] : skill.reqVal;
+        const key   = sName.toLowerCase();
+        const curVal = state.radiantPericias[key] || 0;
+        const pInfo = CosData.PERICIAS_RADIANTES[key];
+        lines.push({ met: curVal >= sVal, text: `${pInfo ? pInfo.name : sName} +${sVal} (atual: ${curVal})` });
+      }
+    } else if (isRadiantSkill(skill) && skill.reqStat && skill.reqVal > 0) {
+      const key = skill.reqStat.toLowerCase();
+      const curVal = state.radiantPericias[key] || state.pericias[CosData.statToPericia(skill.reqStat)] || 0;
+      const pInfo = CosData.PERICIAS_RADIANTES[key];
+      lines.push({ met: curVal >= skill.reqVal, text: `${pInfo ? pInfo.name : skill.reqStat} +${skill.reqVal} (atual: ${curVal})` });
+    } else {
+      lines.push(...statReqLines(skill));
+    }
+    if (skill.isPower) {
+      lines.push({ met: state.unlockedSkills.has(skill.id), text: `Objetivo Metalnascido: ${goalNameForTree(skill.cls)}` });
+    }
+    for (const dep of skill.deps) {
+      const depSkill = findDepSkill(skill, dep);
+      lines.push({ met: !!(depSkill && state.unlockedSkills.has(depSkill.id)), text: dep });
+    }
+    if (skill.prereqText) lines.push({ special: true, text: skill.prereqText });
+    return lines;
+  }
+
+  // Resumo do metal no modal de um nó de Poder (Alomancia/Feruquemia)
+  function powerInfoHtml(skill) {
+    const metal = CosData.getMetalOfTree(skill.cls);
+    const art = CosData.getArtOfTree(skill.cls);
+    if (!metal || !art) return '';
+    const info = metal[art];
+    const who = art === 'allo' ? info.misting : info.ferring;
+    const extra = art === 'allo'
+      ? [info.category, info.intExt, info.pushPull].filter(Boolean).join(' · ')
+      : [info.category, info.alloy].filter(Boolean).join(' · ');
+    return `<div class="modal-power-info" style="--metal-color:${metal.color}">
+      <img src="${metal.svg}" alt="${metal.name}" class="modal-power-glyph">
+      <div>
+        <div class="modal-power-effect">${info.effect}</div>
+        <div class="modal-power-meta">${who} · ${extra} · ${CosData.ERA_LABEL[info.era] || ''}</div>
+      </div>
+    </div>`;
   }
 
   // Retorna true se o surto (chave) está bloqueado pelo Cânone no momento
@@ -2192,22 +2949,89 @@ const App = (() => {
   }
 
   function canUnlockCheck(skill) {
-    if (isRadiantSkill(skill)) return canUnlockRadiantSkill(skill).can;
-    if (isAdditionalSkill(skill)) return canUnlockAdditionalSkill(skill).can;
-    return canUnlockSkill(skill).can;
+    return canUnlockAny(skill).can;
   }
+
+  // Árvore de ancestralidade visível (Cantor, Kandra ou Sangue-Koloss)
+  function getAdditionalTreeClasses() {
+    const race = RACES[state.profile.race];
+    if (!race || !race.tree) return [];
+    if (race.setting !== 'both' && !CosData.bookInSetting(race.setting)) return [];
+    return [race.tree];
+  }
+
+  // Aba Metalnascida: nome do caminho escolhido (null se nenhum/cenário sem Mistborn)
+  function getMetalbornTab() {
+    const mb = state.profile.metalborn;
+    return (isMistbornActive() && mb) ? mb.path : null;
+  }
+
+  // Na visão "Todas": o caminho e as Artes cujos poderes já foram treinados
+  function getAllViewMetalEntries() {
+    const path = getMetalbornTab();
+    if (!path) return [];
+    return [path, ...getAccessibleArtTrees().filter(isPowerTrained)];
+  }
+
+  let _allViewSignature = '';
 
   function rebuildTree(keepView) {
     if (state.activeClass === '_all') {
-      if (keepView && SkillRenderer.getViewMode() === 'all') {
+      const radiant = CosData.hasStormlight() ? state.profile.radiantClass : null;
+      const additional = getAdditionalTreeClasses();
+      const metal = getAllViewMetalEntries();
+      // Só dá para atualizar em cena se o conjunto de árvores não mudou
+      // (ex.: treinar um poder acrescenta a árvore dele ao anel)
+      const signature = JSON.stringify([CosData.getSetting(), radiant, additional, metal]);
+      if (keepView && SkillRenderer.getViewMode() === 'all' && signature === _allViewSignature) {
         SkillRenderer.updateStates(state.unlockedSkills, state.pericias, canUnlockCheck);
         return;
       }
-      const addlCls = state.profile.race === 'singer' ? ['Cantor'] : [];
-      SkillRenderer.buildAllTrees(state.unlockedSkills, state.pericias, canUnlockCheck, state.profile.radiantClass, addlCls);
+      _allViewSignature = signature;
+      SkillRenderer.buildAllTrees(state.unlockedSkills, state.pericias, canUnlockCheck, radiant, additional, metal);
+    } else if (state.activeClass === getMetalbornTab()) {
+      SkillRenderer.buildMetalbornTree(state.activeClass, getAccessibleArtTrees(),
+        state.unlockedSkills, !!keepView, canUnlockCheck);
     } else {
       SkillRenderer.buildTree(state.activeClass, state.unlockedSkills, state.pericias, !!keepView, canUnlockCheck);
     }
+  }
+
+  // Troca de cenário (Cosmere / Mistborn / Misto). Reduzir o cenário só é permitido
+  // se nada desbloqueado ficar escondido.
+  function blockersForSetting(setting) {
+    if (setting === 'misto') return [];
+    const prev = CosData.getSetting();
+    CosData.setSetting(setting);
+    const visible = new Set(CosData.SKILLS.map(s => s.id));
+    CosData.setSetting(prev);
+    const out = [];
+    for (const s of CosData.ALL_SKILLS) {
+      if (state.unlockedSkills.has(s.id) && !state.freeUnlockedSkills.has(s.id) && !visible.has(s.id)) out.push(s.name);
+    }
+    if (setting === 'mistborn' && state.profile.radiantClass) out.push(`Ordem Radiante (${state.profile.radiantClass})`);
+    if (setting === 'stormlight' && state.profile.metalborn) out.push(`Caminho ${state.profile.metalborn.path}`);
+    const race = RACES[state.profile.race];
+    if (race && race.setting !== 'both' && race.setting !== setting) out.push(`Ancestralidade ${race.name}`);
+    return out;
+  }
+
+  function applySetting(setting) {
+    CosData.setSetting(setting);
+    state.profile.setting = setting;
+    document.body.classList.toggle('setting-mistborn', setting === 'mistborn');
+    document.body.classList.toggle('setting-misto', setting === 'misto');
+    document.body.classList.toggle('setting-stormlight', setting === 'stormlight');
+    SkillRenderer.setTheme(setting);
+    // Cópias de talentos compartilhados que apareceram com o novo cenário
+    for (const s of CosData.SKILLS) {
+      if (state.unlockedSkills.has(s.id)) continue;
+      const twin = CosData.SKILLS.find(o => o.name === s.name && o.id !== s.id && state.unlockedSkills.has(o.id));
+      if (twin) { state.unlockedSkills.add(s.id); state.freeUnlockedSkills.add(s.id); }
+    }
+    const validTabs = ['_all', ...CosData.CLASSES, ...getAdditionalTreeClasses(), getMetalbornTab(),
+      CosData.hasStormlight() ? state.profile.radiantClass : null].filter(Boolean);
+    if (!validTabs.includes(state.activeClass)) state.activeClass = '_all';
   }
 
   // ---- SAVE / LOAD (lógica de estado — CRUD e modal estão em saves.js) ----
@@ -2218,43 +3042,167 @@ const App = (() => {
       attributes: state.attributes,
       pericias: state.pericias,
       radiantPericias: state.radiantPericias,
+      metalPericias: state.metalPericias,
       unlockedSkills: [...state.unlockedSkills],
       freeUnlockedSkills: [...state.freeUnlockedSkills],
       singerFreeIds: [...state.singerFreeIds],
+      grantedIds: [...state.grantedIds],
       spentTalents: state.spentTalents,
       activeClass: state.activeClass,
     };
   }
 
   function applySaveData(data) {
-    state.profile = { ...state.profile, radiantClassLocked: false, ancestryClass: null, ...data.profile };
+    // Saves antigos não têm cenário: são do Cosmere (Stormlight)
+    state.profile = { ...state.profile, radiantClassLocked: false, ancestryClass: null,
+      setting: 'stormlight', era: 'livre', kandraBlessing: null, metalborn: null, ...data.profile };
     state.attributes = { ...state.attributes, ...data.attributes };
     state.pericias = { ...state.pericias, ...data.pericias };
     state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
+    state.metalPericias = { alomancia: 0, feruquimia: 0, ...(data.metalPericias || {}) };
     state.unlockedSkills = new Set(data.unlockedSkills || []);
     state.freeUnlockedSkills = new Set(data.freeUnlockedSkills || []);
     state.singerFreeIds = new Set(data.singerFreeIds || []);
+    state.grantedIds = new Set(data.grantedIds || []);
     state.spentTalents = data.spentTalents || 0;
     state.activeClass = data.activeClass || '_all';
+    // O caminho "Ferring" foi renomeado para "Ferroso"
+    const RENAMED = { 'Ferring': 'Ferroso' };
+    const mb = state.profile.metalborn;
+    if (mb && RENAMED[mb.path]) mb.path = RENAMED[mb.path];
+    if (RENAMED[state.profile.ancestryClass]) state.profile.ancestryClass = RENAMED[state.profile.ancestryClass];
+    if (RENAMED[state.activeClass]) state.activeClass = RENAMED[state.activeClass];
+    applySetting(state.profile.setting);
+    if (_chooserClose) _chooserClose('loaded');
+    hideProfileModal();
     renderSidebar();
     renderClassTabs();
     rebuildTree();
   }
 
+  // Volta para a tela inicial (escolha de cenário). O personagem atual é fechado.
+  function goHome() {
+    const hasWork = state.profile.name || state.unlockedSkills.size > 0;
+    if (hasWork && !confirm('Voltar à tela inicial? O personagem atual será fechado — salve antes se quiser mantê-lo.')) return;
+    resetProfile();
+  }
+
   function resetProfile() {
-    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false, ancestryClass: null, pulverizadorCanone: null, rompeCeuCanone: null };
+    state.profile = { name: '', race: 'human', level: 1, setting: state.profile.setting || 'stormlight', era: 'livre',
+      kandraBlessing: null, metalborn: null, radiantClass: null, radiantClassLocked: false, ancestryClass: null,
+      pulverizadorCanone: null, rompeCeuCanone: null };
     state.attributes = { forca:0, velocidade:0, intelecto:0, vontade:0, consciencia:0, presenca:0 };
     initPericias();
     state.unlockedSkills = new Set();
     state.freeUnlockedSkills = new Set();
     state.singerFreeIds = new Set();
+    state.grantedIds = new Set();
     state.spentTalents = 0;
     state.activeClass = '_all';
 
     renderSidebar();
     renderClassTabs();
     rebuildTree();
+    startNewCharacterFlow();
+  }
+
+  // ---- ESCOLHA DE CENÁRIO (tela inicial) ----
+  // mode 'new': início de um personagem novo (segue para o perfil)
+  // mode 'change': troca posterior, pelo selo do cenário na barra lateral
+  // Fecha a tela inicial por fora (ex.: um save foi carregado a partir dela)
+  let _chooserClose = null;
+
+  function showSettingChooser(mode) {
+    return new Promise(resolve => {
+      const current = state.profile.setting;
+      const overlay = document.createElement('div');
+      overlay.id = 'setting-chooser';
+      overlay.className = 'setting-chooser';
+      const cards = [
+        { key: 'stormlight', title: 'Cosmere', sub: 'Roshar · Stormlight', img: 'svg/mundos/roshar.svg',
+          desc: 'Ordens Radiantes, Surtos, Cantores e as especializações do Stormlight Handbook.' },
+        { key: 'mistborn', title: 'Mistborn', sub: 'Scadrial · Eras 1 e 2', img: 'svg/mundos/scadrial.svg',
+          desc: 'Alomancia, Feruquemia, Kandra, Sangue-Koloss e as especializações do Mistborn Handbook.' },
+        { key: 'misto', title: 'Misto', sub: 'Roshar + Scadrial', img: 'svg/mundos/Cosmere.svg',
+          desc: 'Tudo junto: trilhas unificadas, Ordens Radiantes e caminhos Metalnascidos no mesmo personagem.' },
+      ];
+      overlay.innerHTML = `
+        <div class="sc-mist"></div>
+        <div class="sc-content">
+          <div class="sc-kicker">${mode === 'change' ? 'Trocar cenário' : 'Cosmere RPG · Novo personagem'}</div>
+          <h1 class="sc-title">Onde sua história acontece?</h1>
+          <p class="sc-subtitle">${mode === 'change'
+            ? 'Você pode ampliar para o Misto a qualquer momento. Voltar para um só livro exige que nada fique escondido.'
+            : 'Dá para misturar depois — o cenário Misto pode ser ativado a qualquer momento.'}</p>
+          <div class="sc-cards">
+            ${cards.map(c => `
+              <button class="sc-card sc-card--${c.key} ${c.key === current && mode === 'change' ? 'current' : ''}" data-setting="${c.key}">
+                <div class="sc-card-art">
+                  <img src="${c.img}" alt="">
+                </div>
+                <div class="sc-card-title">${c.title}</div>
+                <div class="sc-card-sub">${c.sub}</div>
+                <div class="sc-card-desc">${c.desc}</div>
+                ${c.key === current && mode === 'change' ? '<div class="sc-card-badge">Atual</div>' : ''}
+              </button>`).join('')}
+          </div>
+          ${mode === 'change'
+            ? '<button class="btn sc-cancel">Cancelar</button>'
+            : `<div class="sc-alt">
+                 <span>ou</span>
+                 <button class="btn sc-load" type="button">Carregar personagem salvo</button>
+                 <button class="btn sc-import" type="button">Importar ficha PDF</button>
+               </div>`}
+        </div>`;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+
+      const close = value => {
+        _chooserClose = null;
+        overlay.classList.remove('visible');
+        setTimeout(() => overlay.remove(), 350);
+        resolve(value);
+      };
+      _chooserClose = close;
+      overlay.querySelector('.sc-cancel')?.addEventListener('click', () => close(null));
+      // Os saves e a importação abrem por cima; se carregarem um personagem, a tela fecha
+      overlay.querySelector('.sc-load')?.addEventListener('click', () => SavesManager.showSavesModal());
+      overlay.querySelector('.sc-import')?.addEventListener('click', () => importFromPDF());
+      overlay.querySelectorAll('.sc-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const key = card.dataset.setting;
+          if (mode === 'change') {
+            if (key === current) return close(null);
+            const blockers = blockersForSetting(key);
+            if (blockers.length) {
+              notify(`Não dá para trocar: ${blockers.slice(0, 3).join(', ')}${blockers.length > 3 ? '…' : ''} ficaria de fora.`);
+              return;
+            }
+          }
+          close(key);
+        });
+      });
+    });
+  }
+
+  async function startNewCharacterFlow() {
+    const setting = await showSettingChooser('new');
+    if (setting === 'loaded') return; // um save foi carregado a partir da tela inicial
+    applySetting(setting || 'stormlight');
+    renderSidebar();
+    renderClassTabs();
+    rebuildTree();
     showProfileModal(false);
+  }
+
+  async function changeSetting() {
+    const setting = await showSettingChooser('change');
+    if (!setting) return;
+    applySetting(setting);
+    renderSidebar();
+    renderClassTabs();
+    rebuildTree();
+    notify(`Cenário: ${CosData.SETTINGS[setting].name}`);
   }
 
   // ---- IMPORT FROM PDF ----
@@ -2463,6 +3411,12 @@ const App = (() => {
         state.singerFreeIds = singerFreeIds;
         state.spentTalents = spentTalents;
         state.activeClass = '_all';
+        // A ficha PDF não guarda os campos do Mistborn: mantém o cenário atual
+        Object.assign(state.profile, { setting: CosData.getSetting(), era: 'livre', kandraBlessing: null, metalborn: null });
+        state.metalPericias = { alomancia: 0, feruquimia: 0 };
+        state.grantedIds = new Set();
+        applySetting(state.profile.setting);
+        if (_chooserClose) _chooserClose('loaded');
 
         document.getElementById('char-name').value = state.profile.name;
         document.querySelectorAll('.race-btn').forEach(b => {
@@ -2494,15 +3448,35 @@ const App = (() => {
     _profileDraft = {
       name: state.profile.name || '',
       race: state.profile.race || 'human',
+      era: state.profile.era || 'livre',
+      kandraBlessing: state.profile.kandraBlessing || 'consciencia',
     };
 
     const isNew = !canCancel;
+    const mist = isMistbornActive();
+    const humanDesc = mist
+      ? 'Ganha 1 talento bônus de trilha heroica no nível 1 e a cada novo patamar.'
+      : 'O 1º talento deve ser o Rank&nbsp;0 de uma classe mundana; o 2º fica restrito à mesma classe.';
+    const raceCards = [
+      { key: 'human',  desc: humanDesc },
+      { key: 'singer', desc: '<em>Mudar Forma</em> desbloqueado gratuitamente + 1 talento livre para gastar em qualquer árvore.' },
+      { key: 'kandra', desc: 'Só 6 pontos de atributo + uma Bênção. <em>Forma Natural</em> e <em>Disfarce Kandra</em> grátis; não pode ser Metalnascido.' },
+      { key: 'koloss', desc: 'Força máxima +1 (até 4 na criação) e <em>Vigor Koloss</em> grátis (+1 de vida por nível). Era 2.' },
+    ].filter(c => RACES[c.key].setting === 'both' || CosData.bookInSetting(RACES[c.key].setting))
+     .map(c => ({ ...c, img: `<img src="${raceArt(c.key)}" alt="${RACES[c.key].name}" loading="lazy">` }));
+
+    const eraOptions = [
+      { v: 'livre', label: 'Livre', sub: 'sem restrição de era' },
+      { v: 1, label: 'Era 1', sub: 'Império Final' },
+      { v: 2, label: 'Era 2', sub: 'Pós-Catacendre' },
+    ];
 
     modal.innerHTML = `
       <div class="pm-backdrop"></div>
       <div class="pm-content">
         <div class="pm-header">
           <span class="pm-title">${isNew ? 'Criar Personagem' : 'Editar Perfil'}</span>
+          <span class="pm-setting-chip">${CosData.SETTINGS[state.profile.setting].name}</span>
           ${canCancel ? '<button class="pm-close" id="pm-close-btn">&times;</button>' : ''}
         </div>
         <div class="pm-body">
@@ -2513,33 +3487,37 @@ const App = (() => {
               placeholder="Digite o nome..." value="${_profileDraft.name}" maxlength="40" autocomplete="off">
           </div>
 
+          ${mist ? `
+          <div class="pm-section">
+            <div class="pm-section-title">Era de Scadrial</div>
+            <div class="pm-era-row">
+              ${eraOptions.map(o => `<button class="pm-era-btn ${String(_profileDraft.era) === String(o.v) ? 'active' : ''}" data-era="${o.v}">
+                <span>${o.label}</span><small>${o.sub}</small></button>`).join('')}
+            </div>
+          </div>` : ''}
+
           ${isNew ? `
           <div class="pm-section">
             <div class="pm-section-title">Ancestralidade</div>
-            <div class="pm-race-cards">
-
-              <div class="pm-race-card ${_profileDraft.race === 'human' ? 'active' : ''}" data-race="human">
-                <div class="pm-race-img">
-                  <img src="assets/human.png" alt="Humano">
-                </div>
-                <div class="pm-race-name">Humano</div>
-                <div class="pm-race-desc">
-                  O 1º talento deve ser o Rank&nbsp;0 de uma classe mundana; o 2º fica restrito à mesma classe.
-                </div>
-              </div>
-
-              <div class="pm-race-card ${_profileDraft.race === 'singer' ? 'active' : ''}" data-race="singer">
-                <div class="pm-race-img pm-race-img--singer">
-                  <span class="pm-race-img-placeholder">&#9670;</span>
-                </div>
-                <div class="pm-race-name">Cantor</div>
-                <div class="pm-race-desc">
-                  <em>Mudar Forma</em> desbloqueado gratuitamente + 1 talento livre para gastar em qualquer árvore.
-                </div>
-              </div>
-
+            <div class="pm-race-cards pm-race-cards--${raceCards.length}">
+              ${raceCards.map(c => `
+              <div class="pm-race-card ${_profileDraft.race === c.key ? 'active' : ''}" data-race="${c.key}">
+                <div class="pm-race-img">${c.img}</div>
+                <div class="pm-race-name">${RACES[c.key].name}</div>
+                <div class="pm-race-desc">${c.desc}</div>
+              </div>`).join('')}
             </div>
           </div>` : ''}
+
+          <div class="pm-section pm-blessing-section" style="${_profileDraft.race === 'kandra' ? '' : 'display:none'}">
+            <div class="pm-section-title">Bênção Kandra</div>
+            <div class="pm-blessings">
+              ${Object.entries(KANDRA_BLESSINGS).map(([k, b]) => `
+                <button class="pm-blessing ${_profileDraft.kandraBlessing === k ? 'active' : ''}" data-blessing="${k}">
+                  <span class="pm-blessing-name">${b.name}</span><span class="pm-blessing-desc">${b.desc}</span>
+                </button>`).join('')}
+            </div>
+          </div>
 
         </div>
         ${isNew ? `
@@ -2576,9 +3554,26 @@ const App = (() => {
         card.addEventListener('click', () => {
           _profileDraft.race = card.dataset.race;
           modal.querySelectorAll('.pm-race-card').forEach(c => c.classList.toggle('active', c === card));
+          const bless = modal.querySelector('.pm-blessing-section');
+          if (bless) bless.style.display = _profileDraft.race === 'kandra' ? '' : 'none';
         });
       });
     }
+
+    modal.querySelectorAll('.pm-era-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = btn.dataset.era;
+        _profileDraft.era = v === 'livre' ? 'livre' : Number(v);
+        modal.querySelectorAll('.pm-era-btn').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    modal.querySelectorAll('.pm-blessing').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _profileDraft.kandraBlessing = btn.dataset.blessing;
+        modal.querySelectorAll('.pm-blessing').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
 
     // Confirm
     document.getElementById('pm-confirm-btn')?.addEventListener('click', () => {
@@ -2586,6 +3581,10 @@ const App = (() => {
         const inp = document.getElementById('pm-name-input');
         if (inp) { inp.focus(); inp.style.borderColor = 'var(--accent-red)'; }
         notify('Digite um nome para o personagem');
+        return;
+      }
+      if (_profileDraft.race === 'koloss' && _profileDraft.era === 1) {
+        notify('Sangue-Koloss só existe na Era 2 — escolha outra era ou ancestralidade');
         return;
       }
       applyProfile(_profileDraft);
@@ -2621,6 +3620,8 @@ const App = (() => {
     const prevRace = state.profile.race;
     state.profile.name = draft.name.trim();
     state.profile.race = draft.race;
+    if (draft.era !== undefined) state.profile.era = draft.era;
+    state.profile.kandraBlessing = draft.race === 'kandra' ? draft.kandraBlessing : null;
 
     // Handle race change effects
     if (draft.race !== prevRace) {
@@ -2629,7 +3630,12 @@ const App = (() => {
       } else {
         removeSingerFreeSkills();
       }
+      removeAncestryGrants();
+      if (draft.race === 'kandra' && state.profile.metalborn && !state.profile.metalborn.locked) {
+        state.profile.metalborn = null; // Kandra não podem ser Metalnascidos
+      }
     }
+    applyAncestryGrants();
 
     renderSidebar();
     renderClassTabs();
@@ -2639,17 +3645,47 @@ const App = (() => {
   // ---- BOOK PDF UI STATE ----
   function updateBookPdfUI() {
     const btnBook    = document.getElementById('btn-load-book');
-    const btnClear   = document.getElementById('btn-clear-book');
     const bookStatus = document.getElementById('book-pdf-status');
+    const list       = document.getElementById('book-list');
+    const btnExport  = document.getElementById('btn-export-desc');
     if (!btnBook) return;
 
-    const hasDesc = PdfExtractor.hasStoredDescriptions();
-    btnBook.textContent            = hasDesc ? 'Recarregar Livro (PDF)' : 'Carregar Livro (PDF)';
-    btnClear.style.display         = hasDesc ? 'inline-block' : 'none';
-    if (!hasDesc) {
+    const books = PdfExtractor.listBooks();
+    btnBook.textContent = books.length ? 'Carregar outro Livro (PDF)' : 'Carregar Livro (PDF)';
+    if (btnExport) btnExport.disabled = !books.length;
+    if (!books.length && bookStatus) {
       bookStatus.style.display = 'none';
       bookStatus.textContent   = '';
     }
+    if (!list) return;
+    list.innerHTML = books.map(b => `
+      <div class="book-chip">
+        <span class="book-chip-name">${b.label}</span>
+        <span class="book-chip-count">${b.count} descrições</span>
+        ${b.noBasics ? `<span class="book-chip-warn" title="Carregue este PDF de novo para extrair as habilidades básicas dos fluxos e metais">recarregar PDF</span>` : ''}
+        ${b.translatable ? `<button class="book-chip-translate" data-book="${b.id}" title="Traduzir para português no próprio navegador">Traduzir</button>` : ''}
+        <button class="book-chip-remove" data-book="${b.id}" title="Remover este livro">&times;</button>
+      </div>`).join('');
+    list.querySelectorAll('.book-chip-remove').forEach(btn => btn.addEventListener('click', () => {
+      const b = books.find(x => x.id === btn.dataset.book);
+      if (!confirm(`Remover as descrições de ${b ? b.label : 'este livro'}?`)) return;
+      PdfExtractor.removeBook(btn.dataset.book);
+      updateBookPdfUI();
+    }));
+    list.querySelectorAll('.book-chip-translate').forEach(btn => btn.addEventListener('click', async () => {
+      list.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      bookStatus.style.display = 'block';
+      bookStatus.textContent = 'Preparando o tradutor do navegador…';
+      try {
+        const { translated, total } = await PdfExtractor.translateBook(btn.dataset.book, msg => {
+          bookStatus.textContent = msg;
+        });
+        bookStatus.textContent = `Tradução automática pronta: ${translated}/${total} descrições em português.`;
+      } catch (err) {
+        bookStatus.textContent = `Erro: ${err.message}`;
+      }
+      updateBookPdfUI();
+    }));
   }
 
   // ---- INIT (async - waits for skills JSON) ----
@@ -2665,6 +3701,7 @@ const App = (() => {
     await CosData.loadSkills();
     await CosData.loadRadiantSkills();
     await CosData.loadAdditionalSkills();
+    await CosData.loadMistbornSkills();
     await CosData.loadOaths();
     PdfExtractor.loadAndApply();
     updateBookPdfUI();
@@ -2702,13 +3739,16 @@ const App = (() => {
       notify,
     });
     PdfExport.init({
-      getState:        () => state,
+      // A ficha usa os atributos efetivos (com Bênção Kandra / Tamanho Desmedido)
+      getState:        () => ({ ...state, attributes: effectiveAttributes() }),
       getDerivedStats: getDerivedStats,
+      getBasicAbilities,
       notify,
     });
 
     // Bind UI
     bindUI();
+    applySetting(state.profile.setting);
 
     // Initial render
     renderSidebar();
@@ -2725,7 +3765,7 @@ const App = (() => {
         loading.classList.add('fade-out');
         setTimeout(() => {
           loading.remove();
-          if (!state.profile.name) showProfileModal(false);
+          if (!state.profile.name) startNewCharacterFlow();
         }, 600);
       }
     }, 800);
@@ -2838,8 +3878,9 @@ const App = (() => {
         // Se voltou para o Nível 1, reduz atributos que passaram do limite de 3
         if (state.profile.level === 1) {
           for (const key in state.attributes) {
-            if (state.attributes[key] > 3) {
-              state.attributes[key] = 3;
+            const cap = getAttrBaseMax(key);
+            if (state.attributes[key] > cap) {
+              state.attributes[key] = cap;
             }
           }
         }
@@ -2857,7 +3898,6 @@ const App = (() => {
     // ---- CARREGAR LIVRO PDF ----
     const bookInput  = document.getElementById('book-pdf-input');
     const btnBook    = document.getElementById('btn-load-book');
-    const btnClear   = document.getElementById('btn-clear-book');
     const bookStatus = document.getElementById('book-pdf-status');
 
     btnBook?.addEventListener('click', () => bookInput?.click());
@@ -2871,10 +3911,10 @@ const App = (() => {
       bookStatus.style.display = 'block';
 
       try {
-        const { found, total } = await PdfExtractor.processFile(file, msg => {
+        const { found, label } = await PdfExtractor.processFile(file, msg => {
           bookStatus.textContent = msg;
         });
-        bookStatus.textContent = `${found} de ${total} habilidades com descrição encontrada.`;
+        bookStatus.textContent = `${label}: ${found} descrições encontradas.`;
       } catch (err) {
         bookStatus.textContent = `Erro: ${err.message}`;
       } finally {
@@ -2883,12 +3923,41 @@ const App = (() => {
       }
     });
 
-    btnClear?.addEventListener('click', () => {
-      if (!confirm('Remover as descrições carregadas do livro?')) return;
-      PdfExtractor.clearDescriptions();
+    // ---- BACKUP PESSOAL DAS DESCRIÇÕES (outro aparelho sem o PDF) ----
+    const backupInput = document.getElementById('book-backup-input');
+    document.getElementById('btn-export-desc')?.addEventListener('click', () => {
+      const url = URL.createObjectURL(PdfExtractor.exportBackup());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cosmere-descricoes-pessoal.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify('Backup exportado — é só para uso pessoal, não compartilhe.');
+    });
+    document.getElementById('btn-import-desc')?.addEventListener('click', () => backupInput?.click());
+    backupInput?.addEventListener('change', async () => {
+      const file = backupInput.files?.[0];
+      backupInput.value = '';
+      if (!file) return;
+      try {
+        const { books, applied } = await PdfExtractor.importBackup(file);
+        bookStatus.style.display = 'block';
+        bookStatus.textContent = `${books} livro(s) importado(s): ${applied} habilidades com descrição.`;
+      } catch (err) {
+        notify(err.message);
+      }
       updateBookPdfUI();
     });
     // Radiant wheel close button + backdrop (Escape key)
+    // Selo do cenário: troca Cosmere / Mistborn / Misto
+    document.getElementById('setting-badge')?.addEventListener('click', changeSetting);
+    document.getElementById('btn-home')?.addEventListener('click', goHome);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.getElementById('metal-table')?.classList.contains('visible')) MetalTable.hide();
+    });
+
     document.getElementById('radiant-wheel-close')?.addEventListener('click', hideRadiantWheel);
     document.getElementById('radiant-wheel')?.addEventListener('click', e => {
       if (e.target === document.getElementById('radiant-wheel')) hideRadiantWheel();
@@ -2993,7 +4062,14 @@ const App = (() => {
     });
   }
 
-  return { init, state, exportToSheet: PdfExport.exportToSheet };
+  // toggleSkill/canUnlock ficam expostos para testes e scripts de console
+  async function toggleAndRefresh(skill) {
+    const ok = await toggleSkill(skill);
+    if (ok) { rebuildTree(true); renderSidebar(); renderClassTabs(); }
+    return ok;
+  }
+
+  return { init, state, exportToSheet: PdfExport.exportToSheet, toggleSkill: toggleAndRefresh, canUnlock: canUnlockAny };
 
 })();
 

@@ -14,6 +14,12 @@ Link para o projeto: https://pretetis.github.io/Cosmere-Builder/
 
     Roda Radiante (Radiant Wheel): Interface dedicada para a escolha da sua Ordem Radiante.
 
+    Cenários Cosmere, Mistborn ou Misto: ao criar o personagem, escolha jogar em Roshar (Stormlight), em Scadrial (Mistborn Handbook) ou misturar os dois — e amplie para o Misto quando quiser pelo selo do cenário na barra lateral.
+
+    Mistborn: as especializações novas (Rebelde, Trapaceiro, Matabrumas, Atirador de Elite, Idealizador, Inventor, Brigão, Pistoleiro), as ancestralidades Kandra e Sangue-Koloss, os cinco caminhos Metalnascidos (Brumoso, Nascido da Bruma, Feruquemista, Ferroso, Duplonato) e as 34 árvores de Alomancia e Feruquemia, com regras de Era 1 / Era 2.
+
+    Tabela Metálica: escolha do caminho e dos metais em anéis por categoria, e uma visão 3D própria para o Mistborn — nós em forma de moedas gravadas, linhas alomânticas azuis (acobreadas na Feruquemia), cinzas caindo e bruma.
+
     Salvar múltiplos personagens no cache do navegador: armazene até 20 personagens localmente via localStorage.
 
     Importação de PDF: carregue uma ficha a partir do PDF exportado pelo sistema, sem depender de JSON.
@@ -73,7 +79,7 @@ http://localhost:8081
 
     /js: Scripts lógicos do aplicativo (app.js, data.js, renderer.js).
 
-    /data: Arquivos JSON contendo os dados do sistema (perícias, caminhos radiantes, etc).
+    /data: Arquivos JSON contendo os dados do sistema (perícias, caminhos radiantes, etc). br_mistborn.json guarda toda a estrutura do Mistborn e é gerado por scripts/mistborn/gerar_dados.py a partir do PDF do livro.
 
     /svg e /sheets: Recursos visuais e o arquivo PDF base da ficha (br_sheet.pdf).
 
