@@ -10,9 +10,12 @@ const PdfExport = (() => {
   let _getState, _getDerivedStats, _notify;
 
   // Recebe callbacks do app.js para não depender de state diretamente
-  function init({ getState, getDerivedStats, notify }) {
+  let _getBasicAbilities = () => [];
+
+  function init({ getState, getDerivedStats, getBasicAbilities, notify }) {
     _getState       = getState;
     _getDerivedStats = getDerivedStats;
+    if (getBasicAbilities) _getBasicAbilities = getBasicAbilities;
     _notify         = notify;
   }
 
@@ -84,9 +87,12 @@ const PdfExport = (() => {
         canvas.width = size; 
         canvas.height = size;
         const ctx = canvas.getContext('2d');
-        
-        ctx.drawImage(img, 0, 0, size, size);
-        
+
+        // Mantém a proporção (os símbolos de mundo não são quadrados)
+        const ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+        const w = ar >= 1 ? size : size * ar, h = ar >= 1 ? size / ar : size;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+
         if (colorArr) {
           ctx.globalCompositeOperation = 'source-in';
           const r = Math.round(colorArr[0] * 255);
@@ -331,8 +337,8 @@ const PdfExport = (() => {
       .replace(/∞/g, 'inf')
       .replace(/–|—/g, '-')
       .replace(/…/g, '...')
-      .replace(/[""]/g, '"')
-      .replace(/['']/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
       // Remove qualquer outro caractere fora do intervalo WinAnsi
       .replace(/[^\x20-\xFF]/g, '');
   }
@@ -377,7 +383,7 @@ const PdfExport = (() => {
     }
 
     // Reusa a mesma lógica de dedup de talentos do exportToSheet
-    const allTalentPools = [...CosData.SKILLS, ...(CosData.RADIANT_SKILLS || []), ...(CosData.ADDITIONAL_SKILLS || [])];
+    const allTalentPools = [...CosData.SKILLS, ...(CosData.RADIANT_SKILLS || []), ...(CosData.ADDITIONAL_SKILLS || []), ...(CosData.METAL_SKILLS || [])];
     const talentById = new Map(allTalentPools.map(s => [s.id, s]));
     const candidateTalents = [];
     const talentClassCount = {};
@@ -435,6 +441,49 @@ const PdfExport = (() => {
     y -= 8;
     page.drawLine({ start: { x: margin+20, y }, end: { x: W-margin-20, y }, color: goldColor, thickness: 0.5, opacity: 0.7 });
     y -= 16;
+
+    // ---- HABILIDADES BÁSICAS (fluxos e poderes metálicos, fora das árvores) ----
+    const basics = _getBasicAbilities();
+    if (basics.length) {
+      const hexRgb = hex => {
+        const n = parseInt(String(hex || '').replace('#', ''), 16);
+        return isNaN(n) ? null : rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+      };
+      page.drawText('HABILIDADES BÁSICAS', { x: contentX, y, size: 9.5, font: fontBold, color: goldColor });
+      y -= 3;
+      page.drawLine({ start: { x: contentX, y }, end: { x: W - margin - 12, y }, color: goldColor, thickness: 0.6, opacity: 0.6 });
+      y -= 11;
+
+      for (const b of basics) {
+        const metal = CosData.getMetalOfTree ? CosData.getMetalOfTree(b.cls) : null;
+        const clrArr = _PDF_CLASS_COLORS[b.cls];
+        const clr = clrArr ? rgb(clrArr[0], clrArr[1], clrArr[2]) : (metal && hexRgb(metal.color)) || rgb(0.12, 0.12, 0.12);
+        const found = PdfExtractor.getBasicAbility(b.id);
+        const paras = [];
+        if (b.nascent) {
+          paras.push('Poder nascente: até concluir o objetivo Metalnascido, só efeitos narrativos pequenos, a critério do Mestre.');
+          const ex = PdfExtractor.getBasicAbility(`nascente:${b.id}`);
+          if (ex) paras.push(`Exemplo: ${ex.description}`);
+        } else if (found) {
+          paras.push(...found.description.split('\n\n'));
+        } else {
+          paras.push('Carregue o livro em PDF no site para trazer a descrição desta habilidade.');
+        }
+        const lines = paras.flatMap((p, i) => [...(i ? [''] : []), ..._wrapText(_cleanDescription(p), font, 7, contentW - 6)]);
+        const title = `${b.name}${b.nascent ? ' (nascente)' : ''}`;
+
+        if (y - (10 + Math.min(lines.length, 6) * 8.5) < bottomLimit) { page = newPage(); y = H - margin - 24; }
+        page.drawText(_sanitizePdf(title), { x: contentX + 4, y, size: 9, font: fontBold, color: clr });
+        y -= 10;
+        for (const line of lines) {
+          if (y < bottomLimit) { page = newPage(); y = H - margin - 24; }
+          if (line) page.drawText(line, { x: contentX + 12, y, size: 7, font, color: rgb(0.35, 0.35, 0.35) });
+          y -= line ? 8.5 : 4;
+        }
+        y -= 6;
+      }
+      y -= 8;
+    }
 
     for (const cls of sortedClasses) {
       const skills = grouped[cls];
@@ -586,10 +635,16 @@ const PdfExport = (() => {
     const mapR     = Math.min((W - margin*2)/2 - 20, mapAreaH/2 - 15);
     
     const radiantClass = state.profile.radiantClass;
-    let svgUrl = 'svg/Cosmere_symbol.svg';
-    let centerColor = [0.83, 0.66, 0.33]; 
+    // Centro do mapa: símbolo do mundo do cenário (ou a ordem radiante, no Cosmere)
+    const setting = state.profile.setting || 'stormlight';
+    const WORLD = {
+      stormlight: ['svg/mundos/roshar.svg',   [0.83, 0.66, 0.33]],
+      mistborn:   ['svg/mundos/scadrial.svg', [0.36, 0.55, 0.75]],
+      misto:      ['svg/mundos/Cosmere.svg',  [0.55, 0.48, 0.75]],
+    };
+    let [svgUrl, centerColor] = WORLD[setting] || WORLD.stormlight;
 
-    if (radiantClass && _RADIANT_SVG_MAP[radiantClass]) {
+    if (setting === 'stormlight' && radiantClass && _RADIANT_SVG_MAP[radiantClass]) {
       svgUrl = _RADIANT_SVG_MAP[radiantClass];
       centerColor = _PDF_CLASS_COLORS[radiantClass] || centerColor;
     }
@@ -667,7 +722,7 @@ const PdfExport = (() => {
       };
       forBothPages('Character Name', p.name || '');
       forBothPages('Level', String(p.level));
-      forBothPages('Ancestry', p.race === 'human' ? 'Humano' : 'Cantor');
+      forBothPages('Ancestry', { human: 'Humano', singer: 'Cantor', kandra: 'Kandra', koloss: 'Sangue-Koloss' }[p.race] || 'Humano');
 
       const allExportSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
 
@@ -680,6 +735,9 @@ const PdfExport = (() => {
 
       let pathsStr = baseClasses.join('; ');
       if (p.radiantClass) pathsStr += (pathsStr ? '; ' : '') + p.radiantClass;
+      // Caminho Metalnascido (só depois do talento-chave)
+      const mbKey = p.metalborn && CosData.getRootMetalSkill && CosData.getRootMetalSkill(p.metalborn.path);
+      if (mbKey && state.unlockedSkills.has(mbKey.id)) pathsStr += (pathsStr ? '; ' : '') + p.metalborn.path;
       forBothPages('Paths', pathsStr);
 
       forBothPages('Strength',  '   '+String(a.forca)      );
@@ -753,34 +811,42 @@ const PdfExport = (() => {
         }
       }
 
+      // Cada linha custom fica no rodapé da coluna da sua defesa — o surto (ou a
+      // perícia Investida do Mistborn) precisa cair na coluna do atributo dele.
+      const slots = [
+        { defense: 'physical',  scoreField: 'Physical Custom',  nameField: 'Custom Skill 1', abbrField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
+        { defense: 'cognitive', scoreField: 'Cognitive Custom', nameField: 'Custom Skill 2', abbrField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
+        { defense: 'spiritual', scoreField: 'Spiritual Custom', nameField: 'Custom Skill 3', abbrField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
+      ];
+      const usedSlots = new Set();
+      const fillCustomSkill = (info, rank) => {
+        const attrInfo   = CosData.ATTRIBUTES[info.attr];
+        const attrAbbr   = attrInfo ? attrInfo.abbr : '';
+        const targetSlot = slots.find(s => !usedSlots.has(s) && attrInfo && s.defense === attrInfo.defense)
+                        || slots.find(s => !usedSlots.has(s));
+        if (!targetSlot) return;
+        usedSlots.add(targetSlot);
+        const attrVal = a[info.attr] || 0;
+        setField(targetSlot.abbrField, attrAbbr, 5);
+        setField(targetSlot.nameField, info.name);
+        setField(targetSlot.scoreField, String(rank + attrVal));
+        for (let i = 0; i < targetSlot.boxes.length; i++) {
+          setCheck(`Rank Box ${targetSlot.boxes[i]}`, i < rank);
+        }
+      };
+
       if (p.radiantClass) {
         const activeSurges = CosData.RADIANT_CLASS_PERICIAS[p.radiantClass] || [];
-        // Cada linha custom fica no rodapé da coluna da sua defesa — o surto
-        // precisa cair na coluna do atributo dele, não na ordem de listagem.
-        const slots = [
-          { defense: 'physical',  scoreField: 'Physical Custom',  nameField: 'Custom Skill 1', abbrField: 'Custom Score 1', boxes: [37, 40, 36, 39, 38] },
-          { defense: 'cognitive', scoreField: 'Cognitive Custom', nameField: 'Custom Skill 2', abbrField: 'Custom Score 2', boxes: [72, 75, 71, 74, 73] },
-          { defense: 'spiritual', scoreField: 'Spiritual Custom', nameField: 'Custom Skill 3', abbrField: 'Custom Score 3', boxes: [107, 110, 106, 109, 108] }
-        ];
-        const usedSlots = new Set();
         activeSurges.forEach(surgeKey => {
           const info = CosData.PERICIAS_RADIANTES[surgeKey];
-          if (!info) return;
-          const attrInfo   = CosData.ATTRIBUTES[info.attr];
-          const attrAbbr   = attrInfo ? attrInfo.abbr : '';
-          const targetSlot = slots.find(s => !usedSlots.has(s) && attrInfo && s.defense === attrInfo.defense)
-                          || slots.find(s => !usedSlots.has(s));
-          if (!targetSlot) return;
-          usedSlots.add(targetSlot);
-          const rank    = state.radiantPericias[surgeKey] || 0;
-          const attrVal = a[info.attr] || 0;
-          setField(targetSlot.abbrField, attrAbbr, 5);
-          setField(targetSlot.nameField, info.name);
-          setField(targetSlot.scoreField, String(rank + attrVal));
-          for (let i = 0; i < targetSlot.boxes.length; i++) {
-            setCheck(`Rank Box ${targetSlot.boxes[i]}`, i < rank);
-          }
+          if (info) fillCustomSkill(info, state.radiantPericias[surgeKey] || 0);
         });
+      }
+
+      // Alomancia / Feruquemia (Mistborn)
+      for (const [key, info] of Object.entries(CosData.PERICIAS_METALICAS || {})) {
+        const rank = (state.metalPericias || {})[key] || 0;
+        if (rank > 0) fillCustomSkill(info, rank);
       }
 
       // ---- TALENTOS — agrupados por classe, sem duplicatas ----
@@ -788,6 +854,7 @@ const PdfExport = (() => {
         ...CosData.SKILLS,
         ...(CosData.RADIANT_SKILLS || []),
         ...(CosData.ADDITIONAL_SKILLS || []),
+        ...(CosData.METAL_SKILLS || []),
       ];
       const talentById = new Map(allTalentPools.map(s => [s.id, s]));
 
